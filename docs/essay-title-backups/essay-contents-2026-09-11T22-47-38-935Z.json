@@ -1,0 +1,26 @@
+[
+  {
+    "contentId": "essay-content-test-a",
+    "essayId": "p1-6211-7684-5988-5988",
+    "contentTitle": "测试范文 A",
+    "content": "星期六早晨，阳光透过窗帘照进房间。我和爸爸带着手套、夹子和垃圾袋来到河边参加清洁活动。河面上有几只白鸭慢慢游过，岸边的柳树轻轻摇着长发。我们先把草地上的饮料瓶、纸屑和塑料袋捡起来，再把可回收的物品分类放进不同的箱子里。天气越来越热，我的额头冒出了汗，可是看到河岸渐渐露出整洁的样子，心里非常高兴。\n\n活动结束时，老师夸我们做得认真，还提醒大家少用一次性塑料。回家的路上，我想起自己以前买饮料时常常随手丢杯子，感到有些不好意思。从今天起，我要带自己的水瓶，也要邀请朋友一起爱护河流，让我们住的地方每天都干干净净。",
+    "wordCount": 230,
+    "level": "basic",
+    "version": "TEST-A",
+    "active": true,
+    "sortOrder": 1,
+    "notes": "Temporary audit content; remove after verification."
+  },
+  {
+    "contentId": "essay-content-test-b",
+    "essayId": "p1-6211-7684-5988-5988",
+    "contentTitle": "测试范文 B",
+    "content": "傍晚，校园里的风吹得很轻。我和同学们参加了图书角整理活动，先把散乱的书按故事、科学和诗歌分类，再用干净的布擦去书架上的灰尘。小明发现一本封面破了的书，便和我一起用透明胶轻轻补好。虽然工作不大，却需要耐心。看着整齐的书架，我们都笑了。\n\n老师说，爱护公共物品也是关心别人，因为下一位读书的同学也会得到方便。我决定以后借书时轻拿轻放，读完按时归还。小小的行动能让校园更温暖，也让我懂得了责任不是一句口号，而是每天认真做好的事情。",
+    "wordCount": 190,
+    "level": "intermediate",
+    "version": "TEST-B",
+    "active": false,
+    "sortOrder": 2,
+    "notes": "Temporary audit content; remove after verification."
+  }
+]

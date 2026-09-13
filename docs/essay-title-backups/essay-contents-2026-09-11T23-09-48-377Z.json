@@ -1,0 +1,50 @@
+[
+  {
+    "contentId": "essay-content-audit-001",
+    "essayId": "p1-6211-7684-5988-5988",
+    "contentTitle": "审核测试范文（已编辑）",
+    "content": "早晨的操场上飘着淡淡的桂花香。我和同学负责整理运动器材，先把跳绳一根根卷好，再把篮球按大小放进篮筐。忽然，小杰发现一个气球卡在树枝上，他想用球去打。我提醒他说：“这样可能会伤到小鸟，也会把器材弄乱。”于是我们找来长杆，小心地把气球取下来。\n\n老师夸我们想得周到，还说合作时要先观察、再行动。回到教室后，我把这件事记在日记里。小小的整理工作让我明白，认真负责不只是完成任务，更要用安全、友善的方式帮助身边的人！",
+    "wordCount": 179,
+    "level": "advanced",
+    "version": "AUDIT-EDIT",
+    "active": true,
+    "sortOrder": 5,
+    "notes": "Temporary readiness audit record."
+  },
+  {
+    "contentId": "essay-content-audit-a",
+    "essayId": "p1-6211-7684-5988-5988",
+    "contentTitle": "基础审核范文",
+    "content": "星期天早上，我和爸爸来到社区花园浇花。花园里有红色的玫瑰、黄色的向日葵，还有几只小鸟在树枝上唱歌。我们先把水管接好，再慢慢给每一棵小苗浇水。爸爸提醒我，水不能开得太大，不然泥土会被冲走。\n\n太阳越升越高，我的手臂有些酸，可是看见叶子上的水珠闪闪发亮，我觉得非常开心。回家时，我学会了照顾植物要有耐心，也明白美丽的花园需要每个人一起爱护。",
+    "wordCount": 149,
+    "level": "basic",
+    "version": "A",
+    "active": true,
+    "sortOrder": 20,
+    "notes": "Temporary readiness audit record."
+  },
+  {
+    "contentId": "essay-content-audit-b",
+    "essayId": "p1-6211-7684-5988-5988",
+    "contentTitle": "进阶审核范文",
+    "content": "放学后，天空飘着细细的雨。我发现校门口有一位低年级同学没有带雨伞，正着急地站在屋檐下。我走过去问他住在哪里，原来他的家和我同一个方向。于是，我把雨伞往他那边移了一些，陪他慢慢走。\n\n路上的水坑很多，我们互相提醒，小心地绕过去。他告诉我今天第一次参加朗读比赛，虽然没有得奖，却学会了勇敢站上舞台。我夸他很棒，他的脸上露出了笑容。到了家门口，他认真地向我道谢。雨还在下，我的鞋子湿了，可心里却暖暖的。",
+    "wordCount": 174,
+    "level": "intermediate",
+    "version": "B",
+    "active": true,
+    "sortOrder": 10,
+    "notes": "Temporary readiness audit record."
+  },
+  {
+    "contentId": "essay-content-audit-c",
+    "essayId": "p1-6211-7684-5988-5988",
+    "contentTitle": "进阶审核范文",
+    "content": "图书馆举办旧书交换日，我带着读过的故事书来到活动室。桌上已经摆满了各种书，有科普读物、童话集，也有介绍历史人物的小册子。我先在每本书里夹好写着名字的小纸条，再把书按类别放到对应的桌子上。\n\n一位同学拿起我的书，问我最喜欢哪一章。我告诉他，故事里的主人公遇到困难没有放弃，所以我每次读到那里都会得到鼓励。后来，我换到一本关于海洋的书，还认识了几位喜欢阅读的新朋友。这次活动让我知道，一本书可以把许多人的想法连接起来。",
+    "wordCount": 187,
+    "level": "advanced",
+    "version": "C",
+    "active": false,
+    "sortOrder": 15,
+    "notes": "Temporary readiness audit record."
+  }
+]

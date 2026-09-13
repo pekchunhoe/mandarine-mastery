@@ -1,0 +1,10 @@
+{
+  "name": "华文词语训练营",
+  "short_name": "词语训练营",
+  "lang": "zh-Hans",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f7f7f0",
+  "theme_color": "#245e50",
+  "icons": [{ "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

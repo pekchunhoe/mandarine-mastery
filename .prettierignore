@@ -1,0 +1,9 @@
+node_modules/
+dist/
+test-results/
+data/vocabulary.json
+package-lock.json
+vendor/
+.npm-cache/
+docs/archive/
+docs/vocabulary-backups/

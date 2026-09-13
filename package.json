@@ -1,0 +1,29 @@
+{
+  "name": "huawen-training-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node tools/serve.mjs",
+    "build": "node tools/build.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "import:vocabulary": "node tools/import-workbook.mjs",
+    "import-vocabulary": "node tools/import-workbook.mjs",
+    "vocabulary:export-master": "node tools/export-master-vocabulary.mjs",
+    "vocabulary:update": "node tools/update-master-vocabulary.mjs",
+    "essays:update": "node tools/essay-title-import.mjs",
+    "essays:release": "npm run essays:update && npm test && npm run build",
+    "test:vocabulary-browser": "node tests/vocabulary-browser.mjs",
+    "test:vocabulary-dialog": "node tests/vocabulary-dialog-browser.mjs",
+    "test:browser": "node tests/browser.mjs",
+    "test:extended": "node tests/extended-browser.mjs",
+    "format": "prettier --write . --ignore-path .prettierignore"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "prettier": "^3.9.6"
+  },
+  "dependencies": {
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  }
+}

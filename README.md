@@ -1,0 +1,190 @@
+# 华文词语训练营
+
+从认词、造句到作文，一步一步学会用词。
+
+A static Mandarin learning lab for Malaysian SJK(C) Years 1–6, initially supplied with Year 3–4 vocabulary. Vanilla HTML, CSS and JavaScript modules; no runtime framework, login, API key or backend.
+
+## Add and manage vocabulary
+
+The human-editable master vocabulary library is **`data/master-vocabulary.xlsx`**. The app reads the generated runtime dataset **`data/vocabulary.json`**; browser changes are local to one device and are not published automatically.
+
+## Adding New Vocabulary
+
+1. Open `data/master-vocabulary.xlsx` in Excel.
+2. Add or edit vocabulary rows. Keep existing IDs; leave `id` empty for a genuinely new word.
+3. Save the workbook.
+4. From the project root, run:
+
+   ```sh
+   npm run vocabulary:update
+   ```
+
+   The command blocks a replacement that would remove more than 25 records or more than 10% of the library. For a deliberate large deletion only, run `npm run vocabulary:update -- --allow-removals`.
+
+5. Review the validation summary, then run `npm test` and `npm run build` and check the new vocabulary in the app.
+6. Commit and push `data/master-vocabulary.xlsx`, `data/vocabulary.json`, and any other intentional source changes. Vercel then rebuilds the updated runtime data.
+
+**DO EDIT:** `data/master-vocabulary.xlsx`  
+**DO NOT NORMALLY EDIT MANUALLY:** `data/vocabulary.json`  
+**GENERATED DURING BUILD:** `dist/data/vocabulary.json`
+
+The teacher master workbook is source-only and is not copied into `dist`.
+
+Read **[the teacher vocabulary guide](docs/vocabulary-library.md)** for validation rules, column aliases, stable IDs, duplicate handling, and the advanced one-off importer. A ready-to-edit **[CSV template](templates/vocabulary-template.csv)** is included.
+
+## Adding Essay Titles and Model Essays
+
+1. Open `data/master-essay-titles.xlsx`.
+2. In `EssayTitles`, add or edit one title per row. Give a new title a permanent, unique ID; never reuse or change an existing ID.
+3. In `EssayContents`, add or edit one model essay per row. Give it a permanent unique `content_id`, link it with the existing `EssayTitles.id` in `essay_id`, and put the whole essay in the `content` cell. Several model essays may share one `essay_id`.
+4. Save the workbook.
+5. Run `npm run essays:update`.
+6. Run `npm test` and `npm run build` before deployment, or run `npm run essays:release` for all three steps.
+
+**DO EDIT:** `data/master-essay-titles.xlsx`  
+**DO NOT EDIT MANUALLY:** `data/essay-titles.json` or `data/essay-contents.json` (generated)  
+**GENERATED DURING BUILD:** `dist/data/essay-titles.json` and `dist/data/essay-contents.json`
+
+Do not manually copy either generated dataset into `dist`; `npm run build` does that automatically.
+
+The importer validates both worksheets and their ID relationship before replacing either generated JSON, then preserves both previous files in `docs/essay-title-backups/`. It blocks a removal of more than 25 records or more than 10% of either library; use `npm run essays:update -- --allow-removals` only after reviewing an intentional bulk deletion. See [the essay-title guide](docs/essay-titles.md) for the complete schema and the character-count rule.
+
+## Run locally
+
+Use Node.js 20 or newer. In this project folder:
+
+```sh
+npm ci
+npm run dev
+```
+
+Open **http://localhost:4173**. The app must be served over HTTP/HTTPS, rather than opened by double-clicking `index.html`, because it uses ES modules and a cached JSON dataset. Install dependencies before first use; the local build copies the pinned Excel parser into static assets.
+
+## Deploy to Vercel
+
+Import this folder as the project root. Use:
+
+- Framework preset: **Other**
+- Build command: **npm run build**
+- Output directory: **dist**
+- Environment variables: **none**
+
+`vercel.json` contains the build and output settings. `npm run build` generates a standalone static deployment in `dist/`, including a content-versioned offline cache. The original Excel file is not required at build time or in the browser. No deployment or public publishing is performed by this project automatically.
+
+## Learning activities
+
+The dashboard connects seven stages: **认词 → 懂词 → 记词 → 造句 → 扩句 → 段落 → 作文**.
+
+There are 23 activity choices, plus the shared **我会不会？** self-assessment after activities:
+
+- Recognition and memory: 闪电认词、生字配词、词语侦探、语境填空、记忆翻牌、限时词语挑战.
+- Sentence production: 句子拼图、造句积木、句子扩建师、句子升级站、句子医生、一词多句.
+- Meaning: 看情境选词、词语分类、词语关系网.
+- Paragraphs and writing: 连句成段、段落建造器、作文词语任务、作文结构地图、作文升级助手、要点导写、范文学习、连接词训练、故事接龙、词语寻宝.
+
+**今日10分钟** carries the same five focus words through recognition, context, typed recall, independent sentences and a small paragraph. The time labels are guidance, not enforced deadlines. Free practice can start at any stage. Timed recognition, matching and cloze are optional.
+
+**今日复习** prioritizes recent unresolved errors, weak words, overdue practice and recognition without production. It mixes easier words into the queue and reduces the priority of words just successfully practised. **我的弱词** provides direct retry, sentence-writing and writing-bag actions.
+
+## Authoritative dataset and content safeguards
+
+The supplied file actually used was:
+
+`华小三四年级_造句词语表_逐词自然造句_彻底修正版.xlsx`
+
+The prompt's `(1)` suffix was not present on the supplied file. Its original two sheets were migrated without record loss into the flat central `data/vocabulary.json`. The migration baseline is:
+
+| Source | Character rows | Vocabulary relationships | Lessons                             |
+| ------ | -------------: | -----------------------: | ----------------------------------- |
+| 三年级 |             79 |                      237 | Blank in the workbook; not invented |
+| 四年级 |            109 |                      327 | 1–20                                |
+| Total  |            188 |                      564 |                                     |
+
+IDs retain **grade + source character + word**. Duplicate words such as 钥匙 and 仓库 keep their source relationships. Progress can be aggregated by identical word, and repeated equivalent answers do not earn duplicate credit across source characters.
+
+Original reference sentences are preserved verbatim in the JSON. Inspection found source problems, including **“这里的山谷长得十分茂盛”**, **“这里的献花长得十分茂盛”** and **“我们小心地沿着铺路向前走”**. `data/content.js` supplies separately labelled teaching examples for 12 words with errors, overgeneralizations or unhelpful templates. Word cards retain the original sentence and explain the change; Teacher Mode lists all changes. The Excel file itself is never modified.
+
+Content coverage is deliberately explicit:
+
+- All 564 vocabulary relationships support word cards, recognition, recall and independent writing.
+- 348 source entries have safe phrase/chunk ordering. Unsupported sentence boundaries use a clearly labelled independent-writing alternative.
+- Curated content includes 12 multi-combination sentence builders, 8 expansion sets, 35 cloze distractor sets, 8 multi-context word sets, 6 illustrated text scenarios and 4 paragraph-ordering stories.
+- For a narrow lesson without reviewed distractors, cloze uses **look → hide → recall**, rather than asserting that arbitrary alternatives are semantically wrong.
+- For unannotated semantic categories or scenarios, the app provides an open explanation task and records reading practice; it does not claim to validate the explanation.
+- Sentence Doctor uses reviewed errors or an explicitly accidental duplicated word. Free corrections outside the provided model are referred to a teacher.
+- Supplemental words in authored narrative text are ordinary language, but target vocabulary and selectable source records remain within the chosen grade/lesson.
+
+To preview a supplied workbook, then apply the reviewed data (Windows, macOS or Linux):
+
+```sh
+npm run import-vocabulary -- "D:\path\to\vocabulary.xlsx"
+# Review test-results/vocabulary-import-report.json first.
+npm run import-vocabulary -- "D:\path\to\vocabulary.xlsx" --write
+npm test
+```
+
+The shared importer supports Chinese/English headings, normalization, stable IDs and duplicate previews. Default writes merge and skip existing entries; `--duplicates=update` updates supplied columns. Each write saves a backup. Browser imports use a worker and IndexedDB; student lessons consume bundled JSON. See the teacher guide before using replacement mode.
+
+## Mastery and honest writing support
+
+Practice weights are recognition **2**, context **4**, typed recall **7**, guided construction **9**, independent sentence practice **14**, paragraph practice **22** and explicit teacher review **25**. Correctness history also affects the resulting percentage.
+
+Evidence gates prevent recognition from substituting for production:
+
+| Highest evidence available                       | Maximum mastery |
+| ------------------------------------------------ | --------------: |
+| Recognition alone                                |             24% |
+| Context selection                                |             44% |
+| Typed recall                                     |             59% |
+| Guided construction                              |             64% |
+| Independent sentence practice                    |             84% |
+| Sentence + recall + paragraph practice           |             89% |
+| The above plus a teacher-confirmed paragraph use |            100% |
+
+Free writing earns **practice evidence**, not a claim of semantic correctness. Eligibility checks require more than an isolated target word, punctuation and sufficient text. Exact copies of a target's reference sentence do not earn independent sentence credit. Hints reduce XP slightly; they do not erase successful evidence. Repeating the same normalized answer for the same word and activity on one day does not farm XP.
+
+The writing assistant counts Chinese characters, paragraphs and target-word appearances; highlights targets; flags repeated connectors, repeated sentences and sentences exceeding 55 characters; and provides a student checklist. **It never generates an AI score or declares arbitrary grammar correct.** Opening, development and ending are self-check items, not automated semantic judgments. `js/writing-checks.js` exposes a separate optional service boundary for a future real language-analysis backend.
+
+Teachers can read locally saved compositions and explicitly confirm selected word usages. Teacher Mode has no authentication and is intended for supervised use on a shared device, not formal assessment security.
+
+## Persistence, privacy and accessibility
+
+Progress, grade/lesson, settings, XP, badges, favorites, review history and writing drafts are local to this browser. Backups can be exported/imported as JSON; compositions can be exported as text. There is no server synchronization or student account.
+
+**重做本题** resets only current selections. **重置学习记录** requires confirmation and clears the app's local progress and drafts. Imported data is sanitized; corrupt/unavailable storage is handled without a blank application, and save failures show an explicit warning.
+
+Touch, mouse and keyboard are supported. Drag interactions also have a tap/button alternative. The interface includes visible focus, text feedback, reduced-motion styles, readable Chinese typography and responsive layouts from 320px upward. Optional Mandarin speech is user initiated and disabled when the device has no appropriate voice.
+
+The service worker caches the full static app after its first successful load. Offline practice works in browsers permitting service workers. Device speech availability and browser storage restrictions can differ; no external image or AI service is required.
+
+## Project structure
+
+```text
+index.html
+styles/          # Typography, layout, components, activities and breakpoints
+js/              # App routing, state, storage, mastery, speech and checks
+activities/      # Separate activity engines
+components/      # Word-card modal, pointer dragging and garden illustration
+data/            # Original vocabulary JSON and separately authored pedagogy
+tools/           # Static server, build and workbook importer
+tests/           # Data, mastery, writing and browser verification
+docs/            # Verification notes
+dist/            # Generated deployment output
+```
+
+## Verification
+
+```sh
+npm ci
+npm test
+npm run dev
+# In another terminal:
+npm run test:browser
+npm run test:extended
+npm run test:vocabulary-browser
+npm run build
+```
+
+Browser tests use installed Microsoft Edge in headless mode on Windows. Elsewhere they use Playwright Chromium (`npx playwright install chromium`); `BROWSER_CHANNEL` can select another installed Chromium channel. The test browser uses an isolated temporary profile.
+
+See `docs/verification.md` for test scope and limits. Screenshots and machine-readable reports are generated in `test-results/` and excluded from deployment.

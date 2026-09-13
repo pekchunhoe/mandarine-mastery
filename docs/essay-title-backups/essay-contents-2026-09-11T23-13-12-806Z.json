@@ -1,0 +1,74 @@
+[
+  {
+    "contentId": "essay-content-audit-c",
+    "essayId": "p1-6211-7684-5988-5988",
+    "contentTitle": "进阶审核范文",
+    "content": "图书馆举办旧书交换日，我带着读过的故事书来到活动室。桌上已经摆满了各种书，有科普读物、童话集，也有介绍历史人物的小册子。我先在每本书里夹好写着名字的小纸条，再把书按类别放到对应的桌子上。\n\n一位同学拿起我的书，问我最喜欢哪一章。我告诉他，故事里的主人公遇到困难没有放弃，所以我每次读到那里都会得到鼓励。后来，我换到一本关于海洋的书，还认识了几位喜欢阅读的新朋友。这次活动让我知道，一本书可以把许多人的想法连接起来。",
+    "wordCount": 187,
+    "level": "advanced",
+    "version": "C",
+    "active": false,
+    "sortOrder": 15,
+    "notes": "Temporary readiness audit record."
+  },
+  {
+    "contentId": "essay-content-audit-b",
+    "essayId": "p1-6211-7684-5988-5988",
+    "contentTitle": "进阶审核范文",
+    "content": "放学后，天空飘着细细的雨。我发现校门口有一位低年级同学没有带雨伞，正着急地站在屋檐下。我走过去问他住在哪里，原来他的家和我同一个方向。于是，我把雨伞往他那边移了一些，陪他慢慢走。\n\n路上的水坑很多，我们互相提醒，小心地绕过去。他告诉我今天第一次参加朗读比赛，虽然没有得奖，却学会了勇敢站上舞台。我夸他很棒，他的脸上露出了笑容。到了家门口，他认真地向我道谢。雨还在下，我的鞋子湿了，可心里却暖暖的。",
+    "wordCount": 174,
+    "level": "intermediate",
+    "version": "B",
+    "active": true,
+    "sortOrder": 10,
+    "notes": "Temporary readiness audit record."
+  },
+  {
+    "contentId": "essay-content-audit-a",
+    "essayId": "p1-6211-7684-5988-5988",
+    "contentTitle": "基础审核范文",
+    "content": "星期天早上，我和爸爸来到社区花园浇花。花园里有红色的玫瑰、黄色的向日葵，还有几只小鸟在树枝上唱歌。我们先把水管接好，再慢慢给每一棵小苗浇水。爸爸提醒我，水不能开得太大，不然泥土会被冲走。\n\n太阳越升越高，我的手臂有些酸，可是看见叶子上的水珠闪闪发亮，我觉得非常开心。回家时，我学会了照顾植物要有耐心，也明白美丽的花园需要每个人一起爱护。",
+    "wordCount": 149,
+    "level": "basic",
+    "version": "A",
+    "active": true,
+    "sortOrder": 20,
+    "notes": "Temporary readiness audit record."
+  },
+  {
+    "contentId": "essay-content-audit-001",
+    "essayId": "p1-6211-7684-5988-5988",
+    "contentTitle": "审核测试范文",
+    "content": "清晨，阳光穿过教室的窗户，照在一排排整齐的课桌上。我和同学们参加校园清洁活动，先把走廊上的纸屑捡进垃圾袋，再把花坛旁的落叶扫成小堆。小雨发现角落里有一个空瓶子，马上把它放进可回收箱。大家分工合作，虽然额头冒出了汗，却没有一个人偷懒。\n\n老师走过来，对我们说：“校园是大家的家，保持整洁要从每一件小事做起。”听了这句话，我想起以前有时会忘记把纸团带走，心里有些不好意思。活动结束后，校园显得格外明亮。我决定以后主动爱护环境，也提醒朋友不要乱丢垃圾。",
+    "wordCount": 197,
+    "level": "basic",
+    "version": "AUDIT",
+    "active": true,
+    "sortOrder": 9999,
+    "notes": "Temporary readiness audit record."
+  },
+  {
+    "contentId": "essay-content-audit-short",
+    "essayId": "p1-6211-7684-5988-5988",
+    "contentTitle": "短篇长度测试",
+    "content": "短文。",
+    "wordCount": 2,
+    "level": "basic",
+    "version": "SHORT",
+    "active": true,
+    "sortOrder": 40,
+    "notes": "Temporary readiness audit record."
+  },
+  {
+    "contentId": "essay-content-audit-long",
+    "essayId": "p1-6211-7684-5988-5988",
+    "contentTitle": "长篇长度测试",
+    "content": "星期天早上，我和爸爸来到社区花园浇花。花园里有红色的玫瑰、黄色的向日葵，还有几只小鸟在树枝上唱歌。我们先把水管接好，再慢慢给每一棵小苗浇水。爸爸提醒我，水不能开得太大，不然泥土会被冲走。\n\n太阳越升越高，我的手臂有些酸，可是看见叶子上的水珠闪闪发亮，我觉得非常开心。回家时，我学会了照顾植物要有耐心，也明白美丽的花园需要每个人一起爱护。放学后，天空飘着细细的雨。我发现校门口有一位低年级同学没有带雨伞，正着急地站在屋檐下。我走过去问他住在哪里，原来他的家和我同一个方向。于是，我把雨伞往他那边移了一些，陪他慢慢走。\n\n路上的水坑很多，我们互相提醒，小心地绕过去。他告诉我今天第一次参加朗读比赛，虽然没有得奖，却学会了勇敢站上舞台。我夸他很棒，他的脸上露出了笑容。到了家门口，他认真地向我道谢。雨还在下，我的鞋子湿了，可心里却暖暖的。",
+    "wordCount": 323,
+    "level": "advanced",
+    "version": "LONG",
+    "active": true,
+    "sortOrder": 41,
+    "notes": "Temporary readiness audit record."
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "contentId": "essay-content-punctuation-audit",
+    "essayId": "p1-6211-7684-5988-5988",
+    "contentTitle": "标点与段落审核",
+    "content": "星期五下午，老师带我们到校园的小菜园观察蔬菜。老师问：“你们知道番茄为什么需要阳光吗？”大家马上举手回答。我说：“因为阳光能帮助植物长大！”老师微笑着点头，并提醒我们：浇水要适量；松土时要小心。\n\n后来，我和同学一起拔草、捡枯叶，还发现一只小蜗牛慢慢爬过叶子。小明想把它带回教室，我问：“它会不会想念自己的家？”小明想了想，把它轻轻放回花坛。回教室时，我明白了观察自然不仅要认真，也要学会尊重每一个小生命。",
+    "wordCount": 172,
+    "level": "basic",
+    "version": "PUNCT",
+    "active": true,
+    "sortOrder": 1,
+    "notes": "Temporary punctuation audit."
+  }
+]
