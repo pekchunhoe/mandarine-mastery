@@ -259,6 +259,11 @@
     min-height: 220px;
   }
 }
+@media (orientation: landscape) {
+  .activity-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @media (max-width: 499px) {
   h1 {
     font-size: 1.6rem;
