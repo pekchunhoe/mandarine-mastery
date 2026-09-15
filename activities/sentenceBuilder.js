@@ -1,4 +1,6 @@
-import { escapeHTML as e, highlight, normalize } from '../js/utils.js';
+import { escapeHTML as e, highlight, normalize, toast } from '../js/utils.js';
+import { copyText } from '../js/clipboard.js';
+import { SENTENCE_SCENARIO_GROUPS, CUSTOM_SENTENCE_SCENARIO } from '../data/sentence-scenarios.js';
 import { builders, practiceExample } from '../data/content.js';
 import { productionEligible } from '../js/writing-checks.js';
 import { state, persist } from '../js/state.js';
@@ -6,11 +8,24 @@ import { enableDrag } from '../components/drag.js';
 export function freeSentence(root, ctx) {
   const key = `sentence:${ctx.item.id}`,
     saved = state.drafts[key]?.text || '';
-  const situations = ['在学校', '和家人相处', '与朋友一起', '你自己想到的情境'];
-  root.innerHTML = `<h2>轮到你来造句</h2><div class="target-word">${e(ctx.item.word)}</div><p class="question-instruction">想想谁在什么地方，做了什么。用这个词语，写一句发生在生活中的话。</p><details class="reference-details" ${ctx.difficulty === 'easy' ? 'open' : ''}><summary>看看参考用法</summary><p class="quote">${highlight(practiceExample(ctx.item), [ctx.item.word])}</p></details><label for="sentence-context">我想写的情境</label><select id="sentence-context">${situations.map((x) => `<option>${x}</option>`).join('')}</select><label for="own-sentence" style="margin-top:16px">我的句子</label><textarea id="own-sentence" placeholder="把人物、事情和想法写清楚。">${e(saved)}</textarea><p class="save-status" id="sentence-save">草稿保存在这台设备</p><div class="check-row"><input type="checkbox" id="sentence-selfcheck"><label for="sentence-selfcheck">我读过一遍，确认词语用在真实的情境里。</label></div><button class="btn primary" id="submit-sentence">记录我的造句练习</button><p class="source-label">自动检查只检查用词、字数与标点。句意和用法请和老师一起读一读。</p>`;
-  root.querySelector('#own-sentence').addEventListener(
+  const isBuilder = ctx.activity?.id === 'builder';
+  const situations = ['在学校', '和家人相处', '与朋友一起', CUSTOM_SENTENCE_SCENARIO];
+  // Keep the platform's native, viewport-bounded picker and its keyboard/touch UI.
+  const situationOptions = isBuilder
+    ? SENTENCE_SCENARIO_GROUPS.map(({ label, options }) => `<optgroup label="${e(label)}">${options.map((text) => `<option>${e(text)}</option>`).join('')}</optgroup>`).join('') + `<option>${e(CUSTOM_SENTENCE_SCENARIO)}</option>`
+    : situations.map((text) => `<option>${e(text)}</option>`).join('');
+  root.innerHTML = `<h2>轮到你来造句</h2><div class="target-word">${e(ctx.item.word)}</div><p class="question-instruction">想想谁在什么地方，做了什么。用这个词语，写一句发生在生活中的话。</p><details class="reference-details" ${ctx.difficulty === 'easy' ? 'open' : ''}><summary>看看参考用法</summary><p class="quote">${highlight(practiceExample(ctx.item), [ctx.item.word])}</p></details><label for="sentence-context">我想写的情境</label><select id="sentence-context" ${isBuilder ? 'class="sentence-scenario-select"' : ''}>${situationOptions}</select><label for="own-sentence" style="margin-top:16px">我的句子</label><textarea id="own-sentence" placeholder="把人物、事情和想法写清楚。">${e(saved)}</textarea>${isBuilder ? `<div class="action-bar sentence-copy-actions"><button type="button" class="btn" id="copy-sentence" ${saved.trim() ? '' : 'disabled'}><span aria-hidden="true">📋</span> 复制句子</button></div>` : ''}<p class="save-status" id="sentence-save">草稿保存在这台设备</p><div class="check-row"><input type="checkbox" id="sentence-selfcheck"><label for="sentence-selfcheck">我读过一遍，确认词语用在真实的情境里。</label></div><button class="btn primary" id="submit-sentence">记录我的造句练习</button><p class="source-label">自动检查只检查用词、字数与标点。句意和用法请和老师一起读一读。</p>`;
+  const input = root.querySelector('#own-sentence');
+  const copy = root.querySelector('#copy-sentence');
+  copy?.addEventListener('click', async () => {
+    if (!input.value.trim()) return;
+    const copied = await copyText(input.value);
+    toast(copied ? '句子已复制' : '未能复制，请长按句子选择文字复制');
+  }, { signal: ctx.signal });
+  input.addEventListener(
     'input',
     (event) => {
+      if (copy) copy.disabled = !event.target.value.trim();
       state.drafts[key] = {
         text: event.target.value,
         word: ctx.item.word,

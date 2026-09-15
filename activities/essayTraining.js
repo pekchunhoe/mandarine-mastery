@@ -7,6 +7,9 @@ import { deriveEssayTraining, writingLengthGuidance } from '../js/essay-training
 import { resolveReferenceParagraph, splitChineseSentences } from '../js/essay-sentence-service.js';
 import { enhanceSpeechUI, stop } from '../js/speech-service.js';
 import { openVocabularyDialog } from '../components/vocabulary-dialog.js';
+import { copyText as copyEssayText } from '../js/clipboard.js';
+// Preserve the existing export for callers and essay-copy regression tests.
+export { copyEssayText };
 
 const gradeName = ['一', '二', '三', '四', '五', '六'];
 const values = (records, key) =>
@@ -19,43 +22,6 @@ const paragraphHTML = (paragraph) =>
     .join('')}</p>`;
 const topicInfo = (topic, content) =>
   `<span class="pill">${gradeName[topic.gradeMin - 1]}年级</span><span class="pill">${e(topic.category)}</span><span class="pill">难度 ${e(topic.difficulty)}</span><span class="small muted">约 ${content.wordCount} 字</span>`;
-
-export async function copyEssayText(
-  text,
-  { navigatorRef = globalThis.navigator, documentRef = globalThis.document } = {},
-) {
-  if (!text) return false;
-  try {
-    if (navigatorRef?.clipboard?.writeText) {
-      await navigatorRef.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // Some mobile browsers expose Clipboard API but deny it outside a trusted context.
-  }
-  if (!documentRef?.createElement || !documentRef.body?.appendChild || !documentRef.execCommand)
-    return false;
-  const field = documentRef.createElement('textarea');
-  field.value = text;
-  field.setAttribute('readonly', '');
-  Object.assign(field.style, {
-    position: 'fixed',
-    top: '0',
-    left: '0',
-    opacity: '0',
-    pointerEvents: 'none',
-  });
-  documentRef.body.appendChild(field);
-  try {
-    field.focus();
-    field.select();
-    return documentRef.execCommand('copy');
-  } catch {
-    return false;
-  } finally {
-    field.remove();
-  }
-}
 
 function TopicPicker({ topics, catalog = topics, selectedId, filters }) {
   const select = (key, label, options) =>

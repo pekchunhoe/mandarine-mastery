@@ -95,6 +95,16 @@
   flex-wrap: wrap;
   margin-top: 18px;
 }
+.sentence-scenario-select {
+  width: 100%;
+  min-width: 0;
+}
+.sentence-copy-actions {
+  margin-top: 8px;
+}
+.sentence-copy-actions .btn {
+  min-height: 44px;
+}
 .tile-bank,
 .tile-answer {
   display: flex;
