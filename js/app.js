@@ -6,7 +6,8 @@ import { wordModal, closeModal } from '../components/modal.js';
 import { initSpeech, speak, speakSequence, refreshSpeech, stop, pause, resume, setSpeechRate } from './speech-service.js';
 import { streak } from './mastery.js';
 import { manageVocabulary } from '../components/vocabulary-library.js';
-import { openTemporaryHelper, observeRouteChange, returnContext, returnToActivity, activitySnapshot } from './activity-context.js';
+import { openTemporaryHelper, observeRouteChange, returnContext, activitySnapshot } from './activity-context.js';
+import { initNavigation, currentRoute, backButton, updateBackButtons } from './navigation.js';
 
 const nav = [
   ['home', '⌂', '学习花园'],
@@ -17,6 +18,14 @@ const nav = [
   ['stats', '↗', '成长记录'],
 ];
 let cleanup;
+let renderedEntry;
+let screenState = state;
+let ready = false;
+const navigation = initNavigation();
+// Keep the actual activity root and its handlers, including answers that only
+// exist inside a renderer's closure. Detaching it does not reset student work.
+const activityScreens = new Map();
+let scrollFrame;
 function clearEssayHighlight(panel) {
   panel?.querySelectorAll?.('[data-essay-sentence]').forEach((sentence) => {
     sentence.classList.remove('essay-sentence--active');
@@ -38,8 +47,23 @@ function highlightEssaySentence(panel, index) {
 }
 function render() {
   stop();
-  cleanup?.();
+  const route = currentRoute();
+  if (screenState !== state) {
+    // Explicit reset/import replaces the learning state, including saved screens.
+    for (const screen of activityScreens.values()) screen.cleanup();
+    activityScreens.clear();
+    screenState = state;
+  }
+  const changingPage = renderedEntry !== navigation.entryId;
+  if (changingPage && cleanup?.suspend) {
+    cleanup.suspend();
+    activityScreens.set(renderedEntry, { root: $('#main'), cleanup });
+  } else {
+    cleanup?.();
+    activityScreens.delete(renderedEntry);
+  }
   cleanup = null;
+  renderedEntry = navigation.entryId;
   const [path, query = ''] = (location.hash.slice(1) || 'home').split('?'),
     [page, activityId] = path.split('/'),
     params = new URLSearchParams(query);
@@ -53,9 +77,17 @@ function render() {
           `<a class="${active === id ? 'active' : ''}" href="#${id}" ${active === id ? 'aria-current="page"' : ''}><span aria-hidden="true">${icon}</span>${label}</a>`,
       )
       .join('')}</nav></div>`;
-  const root = $('#main');
+  let root = $('#main');
+  const cached = activityScreens.get(renderedEntry);
   try {
-    if (page === 'home') home(root);
+    if (cached) {
+      root.replaceWith(cached.root);
+      root = cached.root;
+      cleanup = cached.cleanup;
+      activityScreens.delete(renderedEntry);
+      cleanup.resume();
+    }
+    else if (page === 'home') home(root);
     else if (page === 'activities') activityList(root, params);
     else if (['library', 'weak', 'review'].includes(page)) library(root, page);
     else if (page === 'stats') stats(root);
@@ -72,20 +104,31 @@ function render() {
       '<div class="empty-state"><h1>页面暂时无法显示</h1><p>请刷新后再试。保存的学习记录会保留。</p><a class="btn" href="#home">回到学习花园</a></div>';
   }
   const activityReturn = returnContext();
+  if (!root.querySelector('[data-navigation-back]'))
+    root.insertAdjacentHTML('afterbegin', `<div class="page-back-bar">${backButton()}</div>`);
   if (activityReturn && page !== 'activity')
-    root.insertAdjacentHTML('afterbegin', `<div class="activity-return-bar"><button type="button" class="btn quiet" data-return-activity aria-label="返回${e(activityReturn.sourceLabel)}">← 返回${e(activityReturn.sourceLabel)}</button><span class="small muted">正在使用${e(activityReturn.helperLabel)}</span></div>`);
+    root.querySelector('.page-back-bar')?.insertAdjacentHTML('beforeend', `<span class="small muted">正在使用${e(activityReturn.helperLabel)}</span>`);
+  updateBackButtons(root);
   refreshSpeech();
-  const snapshot = page === 'activity' ? activitySnapshot(location.hash) : null;
-  requestAnimationFrame(() => window.scrollTo({ top: snapshot?.scrollPosition || 0, behavior: 'instant' }));
+  const snapshot = page === 'activity' ? activitySnapshot(route) : null;
+  const top = changingPage ? navigation.scrollPosition ?? snapshot?.scrollPosition ?? 0 : window.scrollY;
+  cancelAnimationFrame(scrollFrame);
+  scrollFrame = requestAnimationFrame(() => {
+    window.scrollTo({ top, behavior: 'instant' });
+    if (changingPage) root.focus({ preventScroll: true });
+  });
 }
 document.addEventListener('click', (event) => {
   const helper = event.target.closest('[data-open-helper]');
   if (helper) openTemporaryHelper({ helperType: helper.dataset.openHelper, helperLabel: helper.dataset.helperLabel || '学习工具', target: helper.getAttribute('href') });
-  if (event.target.closest('[data-return-activity]')) {
+  if (event.target.closest('[data-navigation-back]')) {
     event.preventDefault();
-    returnToActivity();
+    navigation.back();
+    updateBackButtons();
     return;
   }
+  const link = event.target.closest('a[href^="#"]');
+  if (link && (link.hash || '#home') === currentRoute()) event.preventDefault();
   const resetSelection = event.target.closest('[data-reset-vocabulary-selection]');
   if (resetSelection) {
     setSettings({
@@ -141,16 +184,29 @@ document.addEventListener('change', (event) => {
   setSettings(update);
   render();
 });
-window.addEventListener('hashchange', () => {
+function routeChanged() {
+  if (!ready || !navigation.sync()) return;
   observeRouteChange(location.hash);
   closeModal();
   render();
+}
+// Hash traversal emits both events; sync consumes each browser entry once.
+window.addEventListener('popstate', routeChanged);
+window.addEventListener('hashchange', routeChanged);
+window.addEventListener('pagehide', () => {
+  navigation.captureScroll();
+  cleanup?.suspend?.();
+});
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) cleanup?.resume?.();
 });
 window.addEventListener('offline', () => toast('已离线。加载过的词语和练习仍可继续使用。'));
 async function start() {
   try {
     await loadVocabulary();
     initSpeech();
+    ready = true;
+    navigation.sync();
     render();
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
   } catch (error) {

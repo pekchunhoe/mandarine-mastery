@@ -29,6 +29,7 @@ import { hydrate } from './storage.js';
 import { productionEligible } from './writing-checks.js';
 import { vocabularyService } from './vocabulary-service.js';
 import { vocabularyDetails } from '../components/vocabulary-details.js';
+import { backButton } from './navigation.js';
 
 function goHome() {
   location.hash = 'home';
@@ -50,7 +51,7 @@ export function filters() {
   return `<div class="filter-bar"><label>学习年级<select data-setting="grade" aria-label="学习年级"><option value="mixed" ${state.settings.grade === 'mixed' ? 'selected' : ''}>混合复习</option>${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${state.settings.grade === String(n) ? 'selected' : ''}>${prettyGrade(n)}</option>`).join('')}</select></label><label>课次<select data-setting="lesson" aria-label="课次" ${!lessons.length ? 'disabled' : ''}><option value="all">${lessons.length ? '全部课次' : '全部词语（未分课）'}</option>${lessons.map((n) => `<option value="${e(n)}" ${state.settings.lesson === n ? 'selected' : ''}>第${e(n)}课</option>`).join('')}</select></label><details class="advanced-filters" ${['category', 'wordDifficulty', 'tag', 'essayTopic'].some((k) => state.settings[k] && state.settings[k] !== 'all') ? 'open' : ''}><summary>更多词语筛选</summary><div class="library-controls">${select('category', '类别', vocabularyService.values('category'))}${select('wordDifficulty', '词语难度', ['1', '2', '3'])}${select('tag', '标签', vocabularyService.values('tags'))}${select('essayTopic', '作文主题', vocabularyService.values('essayTopics'))}</div><button type="button" class="btn" data-clear-vocabulary-filters>清除更多筛选</button></details></div>`;
 }
 export const heading = (title, subtitle = '', withFilters = true) =>
-  `<div class="page-heading"><div><h1>${title}</h1><p>${subtitle}</p></div>${withFilters ? filters() : ''}</div>`;
+  `<div class="page-back-bar">${backButton()}</div><div class="page-heading"><div><h1>${title}</h1><p>${subtitle}</p></div>${withFilters ? filters() : ''}</div>`;
 const activityCard = (a) =>
   `<a class="activity-card" href="#activity/${a.id}"><div class="row between"><span class="activity-icon">${a.icon}</span>${a.core ? '<span class="pill peach">用词进阶</span>' : `<span class="pill">${stages[a.stage]}</span>`}</div><h3>${a.name}</h3><p>${a.desc}</p><div class="card-foot"><span>约 ${a.minutes} 分钟 · ${stages[a.stage]}练习</span><span class="card-arrow" aria-hidden="true">↗</span></div></a>`;
 const progress = (value, max = 100) =>

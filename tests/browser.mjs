@@ -286,9 +286,9 @@ try {
     await page.locator('#essay-text').fill(essayDraft);
     await page.locator('[data-word-card]').first().click();
     await page.locator('#modal a[data-open-helper]').click();
-    await page.locator('[data-return-activity]').waitFor();
-    assert.equal(await page.locator('[data-return-activity]').count(), 1);
-    await page.locator('[data-return-activity]').click();
+    await page.locator('[data-navigation-back]').waitFor();
+    assert.equal(await page.locator('[data-navigation-back]').count(), 1);
+    await page.locator('[data-navigation-back]').click();
     await page.locator('#essay-text').waitFor();
     assert.equal(await page.locator('#essay-text').inputValue(), essayDraft);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
@@ -301,7 +301,7 @@ try {
     await page.locator('#append-story').click();
     await page.locator('[data-word-card]').first().click();
     await page.locator('#modal a[data-open-helper]').click();
-    await page.locator('[data-return-activity]').click();
+    await page.locator('[data-navigation-back]').click();
     assert.ok((await page.locator('#activity-body').innerText()).includes(storyLine));
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   });
@@ -312,7 +312,7 @@ try {
     await page.goBack();
     await page.locator('#essay-text').waitFor();
     await go('library');
-    assert.equal(await page.locator('[data-return-activity]').count(), 0);
+    assert.equal(await page.locator('.page-back-bar .small').count(), 0);
   });
   await test('Teacher can review saved writing and configure a Year 4 lesson activity', async () => {
     await go('teacher');

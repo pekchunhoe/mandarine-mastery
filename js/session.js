@@ -1,3 +1,4 @@
+import { backButton } from './navigation.js';
 import { vocabularyService } from './vocabulary-service.js';
 import { freeSentence } from '../activities/sentenceBuilder.js';
 import { state, filteredWords, vocabulary, attempt, persist } from './state.js';
@@ -59,12 +60,13 @@ const dailySteps = [
 ];
 
 export function runActivity(root, id, params) {
+  const ownerState = state;
   const route = location.hash;
   const restored = activitySnapshot(route);
   let activity = activityById(id);
   if (!activity) {
     root.innerHTML =
-      '<div class="empty-state"><h1>找不到这项练习</h1><a class="btn primary" href="#activities">返回自由练习</a></div>';
+      `<div class="empty-state"><h1>找不到这项练习</h1>${backButton()}</div>`;
     return () => {};
   }
   const pool = filteredWords();
@@ -130,7 +132,7 @@ export function runActivity(root, id, params) {
     }
   }
   function beginClock() {
-    if (!timeAllowed) return;
+    if (!timeAllowed || timer || ctx?.finished || hasSummary) return;
     activeStarted = Date.now();
     timer = setInterval(() => {
       const time = Math.max(0, remaining - (Date.now() - activeStarted) / 1000);
@@ -169,7 +171,7 @@ export function runActivity(root, id, params) {
       conceal = ['cloze', 'detective', 'scene'].includes(activity.id);
     const diff = daily ? dailySteps[step].difficulty : state.settings.difficulty;
     const recent = focusWords.filter((w) => !conceal || w.word !== item.word).slice(0, 5);
-    root.innerHTML = `<div class="activity-toolbar"><a class="btn quiet" href="#activities">← 返回练习</a><div class="row">${timeAllowed ? `<span class="timer" id="session-timer">◷ ${Math.ceil(remaining)} 秒</span>` : ''}<span class="pill">${{ easy: '初级', medium: '中级', hard: '挑战' }[diff]}</span><button class="icon-btn" id="reset-activity" aria-label="重做本题">↻</button></div></div>${daily ? `<div class="session-strip">${dailySteps.map((s, i) => `<span class="${step === i ? 'current' : ''}">${i < step ? '✓ ' : ''}${s.name} · 约2分钟</span>`).join('')}</div>` : ''}<div class="activity-title-row"><span class="activity-icon">${activity.icon}</span><div><h1>${activity.name}</h1><p>${daily ? '今日10分钟 · ' : ''}${round + 1} / ${count} ${writingIds.includes(activity.id) ? '次写作' : '题'} · ${prettyGrade(item.grade)}${item.lesson ? ` · 第${e(item.lesson)}课` : ''}</p></div></div>${id === 'timed' ? '<div class="stage-tabs"><a class="toggle active" href="#activity/timed">30秒认词</a><a class="toggle" href="#activity/matching?timed=1">60秒配词</a><a class="toggle" href="#activity/cloze?timed=1">90秒填空</a></div>' : ''}<div class="activity-layout ${writingIds.includes(activity.id) ? 'writing-layout' : ''}"><section class="activity-main"><div class="question-card"><div id="activity-body"></div><div id="hint-output" class="hint-box" hidden aria-live="polite"></div><div id="activity-feedback" class="feedback" hidden role="status" aria-live="polite"></div><div id="activity-complete" hidden></div></div><div class="action-bar">${state.settings.hints ? '<button class="btn" id="get-hint">☀ 给我一点提示</button>' : ''}<button class="btn quiet" id="skip-question">${writingIds.includes(activity.id) ? '先保存，下次再写' : '先跳过，稍后再练'}</button></div></section><aside class="activity-aside"><section class="panel soft"><span class="eyebrow">这一步，练习什么？</span><h3 style="margin-top:12px">${activity.desc}</h3><p class="small muted">${writingIds.includes(activity.id) ? '把学过的词写进真实的生活情境。草稿会自动保存。' : activity.stage >= 3 ? '读出意思，动手组织语言。清楚、自然的表达最重要。' : '先看清楚，再想一想。每次练习都可以按自己的节奏来。'}</p><hr><div class="row between"><span class="small">这次已完成</span><strong>${sessionSuccess} 项</strong></div><div class="row between"><span class="small">获得学习经验</span><strong>${sessionXP} XP</strong></div></section><section class="panel"><h3>一起练习的词语</h3><div class="chip-tray">${recent.map((w) => `<button class="word-chip" data-word-card="${e(w.id)}">${e(w.word)}</button>`).join('') || '<p class="small muted">答案先藏起来，试着回忆。</p>'}</div><p class="small muted" style="margin-top:14px">它们也会陪你走进下一次造句和写作。</p></section><p class="notice">🌱 答错没关系。看看提示，再试一次。进步比速度更重要。</p></aside></div>`;
+    root.innerHTML = `<div class="activity-toolbar">${backButton()}<div class="row">${timeAllowed ? `<span class="timer" id="session-timer">◷ ${Math.ceil(remaining)} 秒</span>` : ''}<span class="pill">${{ easy: '初级', medium: '中级', hard: '挑战' }[diff]}</span><button class="icon-btn" id="reset-activity" aria-label="重做本题">↻</button></div></div>${daily ? `<div class="session-strip">${dailySteps.map((s, i) => `<span class="${step === i ? 'current' : ''}">${i < step ? '✓ ' : ''}${s.name} · 约2分钟</span>`).join('')}</div>` : ''}<div class="activity-title-row"><span class="activity-icon">${activity.icon}</span><div><h1>${activity.name}</h1><p>${daily ? '今日10分钟 · ' : ''}${round + 1} / ${count} ${writingIds.includes(activity.id) ? '次写作' : '题'} · ${prettyGrade(item.grade)}${item.lesson ? ` · 第${e(item.lesson)}课` : ''}</p></div></div>${id === 'timed' ? '<div class="stage-tabs"><a class="toggle active" href="#activity/timed">30秒认词</a><a class="toggle" href="#activity/matching?timed=1">60秒配词</a><a class="toggle" href="#activity/cloze?timed=1">90秒填空</a></div>' : ''}<div class="activity-layout ${writingIds.includes(activity.id) ? 'writing-layout' : ''}"><section class="activity-main"><div class="question-card"><div id="activity-body"></div><div id="hint-output" class="hint-box" hidden aria-live="polite"></div><div id="activity-feedback" class="feedback" hidden role="status" aria-live="polite"></div><div id="activity-complete" hidden></div></div><div class="action-bar">${state.settings.hints ? '<button class="btn" id="get-hint">☀ 给我一点提示</button>' : ''}<button class="btn quiet" id="skip-question">${writingIds.includes(activity.id) ? '先保存，下次再写' : '先跳过，稍后再练'}</button></div></section><aside class="activity-aside"><section class="panel soft"><span class="eyebrow">这一步，练习什么？</span><h3 style="margin-top:12px">${activity.desc}</h3><p class="small muted">${writingIds.includes(activity.id) ? '把学过的词写进真实的生活情境。草稿会自动保存。' : activity.stage >= 3 ? '读出意思，动手组织语言。清楚、自然的表达最重要。' : '先看清楚，再想一想。每次练习都可以按自己的节奏来。'}</p><hr><div class="row between"><span class="small">这次已完成</span><strong>${sessionSuccess} 项</strong></div><div class="row between"><span class="small">获得学习经验</span><strong>${sessionXP} XP</strong></div></section><section class="panel"><h3>一起练习的词语</h3><div class="chip-tray">${recent.map((w) => `<button class="word-chip" data-word-card="${e(w.id)}">${e(w.word)}</button>`).join('') || '<p class="small muted">答案先藏起来，试着回忆。</p>'}</div><p class="small muted" style="margin-top:14px">它们也会陪你走进下一次造句和写作。</p></section><p class="notice">🌱 答错没关系。看看提示，再试一次。进步比速度更重要。</p></aside></div>`;
     ctx = {
       item,
       pool,
@@ -324,7 +326,7 @@ export function runActivity(root, id, params) {
         ? Math.round(Math.min(100, (remaining / timeAllowed) * 100))
         : 0;
     const score = attempts ? Math.round(accuracy * 0.7 + speed * 0.3) : 0;
-    root.innerHTML = `<div class="panel empty-state"><span class="empty-icon">🌿</span><span class="eyebrow">${daily ? '今日小课堂' : '这次练习'} · 我的收获</span><h1 style="margin-top:16px">${expired ? '时间到了，看看你的收获。' : sessionSuccess ? '又向“会使用”走近了一步。' : '休息一下，准备好再来。'}</h1><p class="muted">${sessionSuccess ? '今天你不仅在认识词语，也在练习怎样用它们。' : '这一轮还没有完成的题目。可以慢慢来，不用着急。'}</p><div class="summary-score">${sessionXP}<small> XP</small></div><p>完成 ${sessionSuccess} 项 · 需要再想想 ${sessionMistakes} 次</p>${timeAllowed ? `<p>本次挑战 ${score} 分 · 准确率占70%，速度占30%</p><p class="small muted">速度只计算答题时间。做得准，比做得快更重要。</p>` : ''}<div class="chip-tray" style="justify-content:center">${focusWords
+    root.innerHTML = `<div class="activity-toolbar">${backButton()}</div><div class="panel empty-state"><span class="empty-icon">🌿</span><span class="eyebrow">${daily ? '今日小课堂' : '这次练习'} · 我的收获</span><h1 style="margin-top:16px">${expired ? '时间到了，看看你的收获。' : sessionSuccess ? '又向“会使用”走近了一步。' : '休息一下，准备好再来。'}</h1><p class="muted">${sessionSuccess ? '今天你不仅在认识词语，也在练习怎样用它们。' : '这一轮还没有完成的题目。可以慢慢来，不用着急。'}</p><div class="summary-score">${sessionXP}<small> XP</small></div><p>完成 ${sessionSuccess} 项 · 需要再想想 ${sessionMistakes} 次</p>${timeAllowed ? `<p>本次挑战 ${score} 分 · 准确率占70%，速度占30%</p><p class="small muted">速度只计算答题时间。做得准，比做得快更重要。</p>` : ''}<div class="chip-tray" style="justify-content:center">${focusWords
       .slice(0, 8)
       .map((w) => `<button class="word-chip" data-word-card="${e(w.id)}">${e(w.word)}</button>`)
       .join(
@@ -332,10 +334,17 @@ export function runActivity(root, id, params) {
       )}</div><div class="action-bar" style="justify-content:center"><a class="btn primary" href="#activity/essay">把词语写进作文 →</a><a class="btn" href="#stats">看看成长记录</a><a class="btn quiet" href="#home">回到花园</a></div></div>`;
   }
   draw();
-  return () => {
-    if (!hasSummary) saveActivitySnapshot(route, snapshot());
-    controller?.abort();
+  const suspend = () => {
     stopClock();
-    globalThis.speechSynthesis?.cancel();
+    if (state !== ownerState) return;
+    ctx?.save?.();
+    if (!hasSummary) saveActivitySnapshot(route, snapshot());
   };
+  const dispose = () => {
+    suspend();
+    controller?.abort();
+  };
+  dispose.suspend = suspend;
+  dispose.resume = beginClock;
+  return dispose;
 }

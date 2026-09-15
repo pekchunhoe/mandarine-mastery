@@ -151,9 +151,10 @@ export function writing(root, ctx) {
   load();
   draw();
   compactPlanner();
-  ctx.signal?.addEventListener('abort', () => {
+  ctx.save = () => {
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; save(); }
-  }, { once: true });
+  };
+  ctx.signal?.addEventListener('abort', ctx.save, { once: true });
   enableDrag(
     root,
     (id, to) => {
@@ -366,9 +367,10 @@ function storyWriting(root, ctx) {
     saveTimer = setTimeout(() => { saveTimer = null; save(); }, 400);
   }
   draw();
-  ctx.signal?.addEventListener('abort', () => {
+  ctx.save = () => {
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; save(); }
-  }, { once: true });
+  };
+  ctx.signal?.addEventListener('abort', ctx.save, { once: true });
   root.addEventListener(
     'input',
     (event) => {

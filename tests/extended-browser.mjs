@@ -362,7 +362,7 @@ try {
     await tab.locator('#essay-text').fill(temporaryDraft);
     await tab.locator('[data-word-card]').first().click();
     await tab.locator('#modal a[data-open-helper]').click();
-    await tab.locator('[data-return-activity]').click();
+    await tab.locator('[data-navigation-back]').click();
     assert.equal(await tab.locator('#essay-text').inputValue(), temporaryDraft);
     await tab.goto(base + '#activity/modelEssay');
     await tab.locator('[data-speak-essay]').click();

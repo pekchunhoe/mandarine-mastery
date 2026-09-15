@@ -265,17 +265,14 @@ export function guidedEssayWriting(root, ctx) {
     if (immediate) save();
   };
   draw();
-  ctx.signal?.addEventListener(
-    'abort',
-    () => {
-      if (saveTimer) {
-        clearTimeout(saveTimer);
-        saveTimer = null;
-        save();
-      }
-    },
-    { once: true },
-  );
+  ctx.save = () => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      save();
+    }
+  };
+  ctx.signal?.addEventListener('abort', ctx.save, { once: true });
   root.addEventListener('change', () => stop(), { signal: ctx.signal });
   root.addEventListener(
     'input',

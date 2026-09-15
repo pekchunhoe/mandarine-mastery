@@ -392,13 +392,19 @@ dialog::backdrop {
   font-size: var(--text-xs);
   color: var(--muted);
 }
-.activity-return-bar {
+.page-back-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
   margin-bottom: 18px;
   padding: 8px 4px;
+}
+.navigation-back {
+  min-height: 44px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .source-label {
   font-size: var(--text-xs);

@@ -3,12 +3,18 @@ import { state, persist } from './state.js';
 // Activity snapshots bridge a temporary full-page helper visit. They are kept in
 // memory first, then best-effort persisted through the application's state store.
 const memorySnapshots = new Map();
+let snapshotState = state;
 const MAX_SNAPSHOTS = 8;
 let pendingHelperTarget = null;
 
 const activityRoute = (route) => typeof route === 'string' && /^#activity\/[a-zA-Z0-9_-]+(?:\?.*)?$/.test(route);
 const now = () => Date.now();
 const contextStore = () => {
+  if (snapshotState !== state) {
+    memorySnapshots.clear();
+    pendingHelperTarget = null;
+    snapshotState = state;
+  }
   state.activityContext ||= { returnContext: null, snapshots: {} };
   state.activityContext.snapshots ||= {};
   return state.activityContext;
@@ -16,7 +22,8 @@ const contextStore = () => {
 
 export function activitySnapshot(route) {
   if (!activityRoute(route)) return null;
-  return memorySnapshots.get(route) || contextStore().snapshots[route] || null;
+  const store = contextStore();
+  return memorySnapshots.get(route) || store.snapshots[route] || null;
 }
 
 export function saveActivitySnapshot(route, snapshot) {
@@ -72,16 +79,6 @@ export function returnContext() {
   return value;
 }
 
-export function returnToActivity() {
-  const context = returnContext();
-  if (!context) return false;
-  contextStore().returnContext = null;
-  pendingHelperTarget = null;
-  persist();
-  globalThis.location.hash = context.sourceRoute.slice(1);
-  return true;
-}
-
 // A helper transition keeps its return context. Any other route change clears
 // it, preventing an old destination from leaking into a later activity.
 export function observeRouteChange(nextRoute) {
@@ -89,8 +86,6 @@ export function observeRouteChange(nextRoute) {
   const expectedHelper = pendingHelperTarget && nextRoute === pendingHelperTarget;
   pendingHelperTarget = null;
   if (expectedHelper || !context) return;
-  if (nextRoute === context.sourceRoute || !activityRoute(nextRoute)) {
-    contextStore().returnContext = null;
-    persist();
-  }
+  contextStore().returnContext = null;
+  persist();
 }

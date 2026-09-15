@@ -13,6 +13,8 @@ const ASSETS = [
   './styles/activities.css',
   './styles/responsive.css',
   './js/app.js',
+  './js/navigation.js',
+  './js/activity-context.js',
   './js/utils.js',
   './js/state.js',
   './js/storage.js',

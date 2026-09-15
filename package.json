@@ -16,6 +16,7 @@
     "test:vocabulary-browser": "node tests/vocabulary-browser.mjs",
     "test:vocabulary-dialog": "node tests/vocabulary-dialog-browser.mjs",
     "test:browser": "node tests/browser.mjs",
+    "test:navigation-browser": "node --test tests/navigation-browser.mjs",
     "test:extended": "node tests/extended-browser.mjs",
     "format": "prettier --write . --ignore-path .prettierignore"
   },

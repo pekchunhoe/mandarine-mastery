@@ -1,4 +1,5 @@
 import { vocabulary, changeLocalVocabulary, resetLocalVocabulary } from '../js/state.js';
+import { backButton } from '../js/navigation.js';
 import { vocabularyService } from '../js/vocabulary-service.js';
 import { fields, listFields, previewRows, applyImport } from '../js/vocabulary-schema.js';
 import { exportRecords, libraryStatus, localLibraryNotice } from '../js/vocabulary-store.js';
@@ -41,7 +42,7 @@ export function manageVocabulary(root) {
     disposed = false;
   const size = 25;
   const status = libraryStatus();
-  root.innerHTML = `<div class="page-heading"><div><h1>词语库管理</h1><p id="library-count-summary">发布词库 ${status.bundled} 条 · 当前本机 ${vocabulary.length} 条</p></div><a class="btn" href="#teacher">返回老师工具箱</a></div><p class="notice">这里的修改只保存在本机，不会改变其他学生的词库。发布给全班：导出 JSON，再使用项目导入命令更新并部署。</p>${localLibraryNotice ? `<p class="notice">${e(localLibraryNotice)}</p>` : ''}<div class="panel"><div class="library-actions"><button class="btn primary" id="add-vocabulary">＋ 添加词语</button><label class="btn" for="vocabulary-file">导入 Excel / CSV / JSON</label><input type="file" id="vocabulary-file" accept=".xlsx,.xls,.csv,.json"><button class="btn" data-export="json">导出 JSON</button><button class="btn" data-export="csv">导出 CSV</button><button class="btn" data-export="xlsx">导出 XLSX</button><a class="btn" href="./templates/vocabulary-template.csv" download>下载 CSV 模板</a><button class="btn" id="restore-vocabulary">恢复发布词库</button></div><p id="library-status" role="status" aria-live="polite"></p><div id="import-preview"></div><div class="library-controls"><label>搜索词语、拼音或意思<input id="manage-search" type="search"></label>${[
+  root.innerHTML = `<div class="page-heading"><div><h1>词语库管理</h1><p id="library-count-summary">发布词库 ${status.bundled} 条 · 当前本机 ${vocabulary.length} 条</p></div>${backButton()}</div><p class="notice">这里的修改只保存在本机，不会改变其他学生的词库。发布给全班：导出 JSON，再使用项目导入命令更新并部署。</p>${localLibraryNotice ? `<p class="notice">${e(localLibraryNotice)}</p>` : ''}<div class="panel"><div class="library-actions"><button class="btn primary" id="add-vocabulary">＋ 添加词语</button><label class="btn" for="vocabulary-file">导入 Excel / CSV / JSON</label><input type="file" id="vocabulary-file" accept=".xlsx,.xls,.csv,.json"><button class="btn" data-export="json">导出 JSON</button><button class="btn" data-export="csv">导出 CSV</button><button class="btn" data-export="xlsx">导出 XLSX</button><a class="btn" href="./templates/vocabulary-template.csv" download>下载 CSV 模板</a><button class="btn" id="restore-vocabulary">恢复发布词库</button></div><p id="library-status" role="status" aria-live="polite"></p><div id="import-preview"></div><div class="library-controls"><label>搜索词语、拼音或意思<input id="manage-search" type="search"></label>${[
     ['grade', '年级', ['1', '2', '3', '4', '5', '6']],
     ['category', '类别', vocabularyService.values('category')],
     ['difficulty', '词语难度', ['1', '2', '3']],
