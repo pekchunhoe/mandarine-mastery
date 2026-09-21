@@ -387,13 +387,18 @@ test('installed SDK sends correct Interactions schema, server prompt and statele
   assert.deepEqual(JSON.parse(raw), fixtures[A.SENTENCE_HINT]);
   assert.equal(count, 1);
 });
-test('generation config keeps compact per-action caps and omits explicit thinking settings', () => {
+test('generation config keeps compact caps, with low thinking only for advanced reviews', () => {
   for (const action of Object.values(A))
     assert.equal(
       buildGenerationConfig({ action }).max_output_tokens,
       OUTPUT_TOKEN_CAPS[action],
     );
   assert.deepEqual(buildGenerationConfig({ action: A.SENTENCE_HINT }), { max_output_tokens: 320 });
+  for (const action of [A.PARAGRAPH_REVIEW, A.ESSAY_REVIEW])
+    assert.deepEqual(buildGenerationConfig({ action }), {
+      max_output_tokens: OUTPUT_TOKEN_CAPS[action],
+      thinking_level: 'low',
+    });
 });
 test('SDK safety refusal yields neutral controlled error', async (t) => {
   t.mock.method(globalThis, 'fetch', async () =>

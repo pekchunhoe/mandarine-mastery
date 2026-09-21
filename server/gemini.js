@@ -48,10 +48,13 @@ export function selectGeminiModel(action, env = {}) {
   };
 }
 
-// The Interactions API uses the 2.5 models' defaults: Flash-Lite is off by
-// default, while Flash retains its model-appropriate adaptive reasoning.
+// Fast requests retain the Flash-Lite default; advanced reviews use low
+// reasoning to stay within the application's fixed response-time budget.
 export function buildGenerationConfig({ action }) {
-  return { max_output_tokens: OUTPUT_TOKEN_CAPS[action] };
+  return {
+    max_output_tokens: OUTPUT_TOKEN_CAPS[action],
+    ...(ADVANCED_ACTIONS.has(action) ? { thinking_level: 'low' } : {}),
+  };
 }
 
 // Isolated SDK adapter. No browser imports, conversation storage, tools or secrets in prompts.
