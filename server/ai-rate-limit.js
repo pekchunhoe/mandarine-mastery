@@ -1,12 +1,19 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { TeacherError } from './ai-contract.js';
 
+export const DEFAULT_CLIENT_RPM = 4;
+
+export function clientRateLimit(value) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 40 ? parsed : DEFAULT_CLIENT_RPM;
+}
+
 // Bounded in-memory protection for each function instance. Deployment-wide limits
 // belong in Vercel Firewall; no identifier is logged, persisted or sent to Gemini.
 export function createTutorLimiter({
   now = Date.now,
   windowMs = 60000,
-  perClient = 8,
+  perClient = DEFAULT_CLIENT_RPM,
   total = 40,
   concurrent = 4,
 } = {}) {
@@ -29,7 +36,9 @@ export function createTutorLimiter({
       const key = createHash('sha256').update(salt).update(address.slice(0, 128)).digest('hex');
       const used = clients.get(key) || 0;
       if (count >= total || used >= perClient || active >= concurrent)
-        throw new TeacherError('AI_RATE_LIMIT', 429);
+        throw new TeacherError('AI_RATE_LIMIT', 429, {
+          retryAfterSeconds: Math.max(1, Math.ceil((windowMs - (time - start)) / 1000)),
+        });
       clients.set(key, used + 1);
       count++;
       active++;

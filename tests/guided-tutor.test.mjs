@@ -1,7 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTeacherHandler } from '../server/ai-handler.js';
-import { createTutorLimiter } from '../server/ai-rate-limit.js';
+import {
+  clientRateLimit,
+  createTutorLimiter,
+  DEFAULT_CLIENT_RPM,
+} from '../server/ai-rate-limit.js';
 import {
   actions,
   systemInstruction,
@@ -235,9 +239,16 @@ test('server throttle blocks quota consumption and resets after window', async (
   const limited = await endpoint(request());
   assert.equal(limited.status, 429);
   assert.equal(limited.headers.get('retry-after'), '60');
+  assert.equal((await limited.json()).error.retryAfterSeconds, 60);
   assert.equal(calls, 2);
   now = 60001;
   assert.equal((await endpoint(request())).status, 200);
+});
+test('server validates configurable per-client RPM without increasing the instance limits', () => {
+  assert.equal(DEFAULT_CLIENT_RPM, 4);
+  assert.equal(clientRateLimit(), 4);
+  assert.equal(clientRateLimit('4'), 4);
+  for (const value of ['0', '-1', '4.5', '41', 'words']) assert.equal(clientRateLimit(value), 4);
 });
 test('concurrency and instance-wide limits bounded independently of client identity', () => {
   const limiter = createTutorLimiter({ concurrent: 1, perClient: 20, total: 2 });

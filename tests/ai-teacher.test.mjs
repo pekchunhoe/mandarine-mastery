@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { paragraphTarget, requestTeaching } from '../js/ai-teacher.js';
+import { clearTeachingCache, paragraphTarget, requestTeaching } from '../js/ai-teacher.js';
 import { TUTOR_ACTION as A, TUTOR_ACTIVITY as B } from '../js/tutor-actions.js';
 
 test('paragraph target prefers selection, otherwise cursor, current paragraph then draft', () => {
@@ -37,6 +37,8 @@ test('client does not serialize unrelated state and only uses same-origin endpoi
   });
 });
 test('client hides raw error and handles malformed/network responses', async (t) => {
+  clearTeachingCache();
+  t.after(clearTeachingCache);
   t.mock.method(globalThis, 'fetch', async () =>
     Response.json({ ok: false, error: { message: 'raw-secret' } }, { status: 503 }),
   );
@@ -56,5 +58,49 @@ test('client hides raw error and handles malformed/network responses', async (t)
       context: { studentSentence: '我去学校。' },
     }),
     /暂时无法联系/,
+  );
+});
+test('client caches only identical successful requests for five minutes', async (t) => {
+  clearTeachingCache();
+  t.after(clearTeachingCache);
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls++;
+    return Response.json({
+      ok: true,
+      action: A.SENTENCE_HINT,
+      data: { thinkingQuestions: ['想一想'] },
+    });
+  });
+  const payload = {
+    activity: B.SENTENCE,
+    context: { situation: '运动会', studentSentence: '小明跑得很快。' },
+  };
+  const first = await requestTeaching(A.SENTENCE_HINT, payload);
+  first.thinkingQuestions[0] = 'changed outside the cache';
+  assert.deepEqual(await requestTeaching(A.SENTENCE_HINT, payload), {
+    thinkingQuestions: ['想一想'],
+  });
+  await requestTeaching(A.SENTENCE_HINT, {
+    ...payload,
+    context: { ...payload.context, studentSentence: '小明跑得更快。' },
+  });
+  assert.equal(calls, 2);
+});
+test('client accepts a controlled rate-limit cooldown only when the server supplies one', async (t) => {
+  clearTeachingCache();
+  t.after(clearTeachingCache);
+  t.mock.method(globalThis, 'fetch', async () =>
+    Response.json(
+      { ok: false, error: { code: 'AI_RATE_LIMIT', retryAfterSeconds: 12 } },
+      { status: 429 },
+    ),
+  );
+  await assert.rejects(
+    requestTeaching(A.SENTENCE_HINT, {
+      activity: B.SENTENCE,
+      context: { situation: '运动会', studentSentence: '小明跑得很快。' },
+    }),
+    (error) => error.retryAfterSeconds === 12 && /12 秒/.test(error.message),
   );
 });

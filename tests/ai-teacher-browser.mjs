@@ -236,6 +236,26 @@ test('loading prevents duplicates and retry succeeds', async (t) => {
   await close(page);
   assert.equal(await page.locator('#guided-line').inputValue(), essay);
 });
+test('a controlled quota delay disables every AI action without changing the draft', async (t) => {
+  const page = await fixture(t);
+  await page.locator('#guided-line').fill(essay);
+  await page.route('**/api/gemini', (route) =>
+    route.fulfill({
+      status: 429,
+      json: { ok: false, error: { code: 'AI_RATE_LIMIT', retryAfterSeconds: 5 } },
+    }),
+  );
+  await page.locator('[data-ai-action="essay_review"]').click();
+  await page.locator('#modal [role="alert"]').waitFor();
+  assert.match(await page.locator('#modal [role="alert"]').textContent(), /5 秒/);
+  assert.equal(
+    await page
+      .locator('[data-ai-action]')
+      .evaluateAll((buttons) => buttons.every((button) => button.disabled)),
+    true,
+  );
+  assert.equal(await page.locator('#guided-line').inputValue(), essay);
+});
 test('close cancels pending result and later response cannot replace vocabulary dialog', async (t) => {
   const page = await fixture(t);
   await page.locator('#guided-line').fill(essay);

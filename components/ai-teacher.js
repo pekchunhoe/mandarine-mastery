@@ -143,11 +143,27 @@ export function tutorResultHTML(action, data) {
 
 export function attachAITeacher(root, { signal, getRequest }) {
   let active,
-    version = 0;
+    version = 0,
+    cooldownUntil = 0,
+    cooldownTimer;
+  const coolingDown = () => Date.now() < cooldownUntil;
   const updateButtons = () =>
     root.querySelectorAll('[data-ai-action]').forEach((button) => {
-      button.disabled = !!active?.pending && button.dataset.aiAction === active.action;
+      button.disabled =
+        coolingDown() || (!!active?.pending && button.dataset.aiAction === active.action);
     });
+  const startCooldown = (seconds) => {
+    cooldownUntil = Math.max(cooldownUntil, Date.now() + seconds * 1000);
+    clearTimeout(cooldownTimer);
+    cooldownTimer = setTimeout(
+      () => {
+        cooldownTimer = undefined;
+        updateButtons();
+      },
+      Math.max(0, cooldownUntil - Date.now()),
+    );
+    updateButtons();
+  };
   function open(action, opener) {
     active?.dispose();
     const session = { version: ++version, action, pending: false };
@@ -221,7 +237,9 @@ export function attachAITeacher(root, { signal, getRequest }) {
         const message =
           error instanceof AIError ? error.message : 'AI老师这次的回复不完整，请再试一次。';
         content.innerHTML = '<p role="alert">' + e(message) + '</p>';
-        retry.hidden = false;
+        if (error instanceof AIError && error.retryAfterSeconds)
+          startCooldown(error.retryAfterSeconds);
+        retry.hidden = coolingDown();
         toast(message);
       } finally {
         if (current()) {
@@ -242,7 +260,12 @@ export function attachAITeacher(root, { signal, getRequest }) {
     'click',
     (event) => {
       const button = event.target.closest('[data-ai-action]');
-      if (!button || (active?.pending && active.action === button.dataset.aiAction)) return;
+      if (
+        !button ||
+        coolingDown() ||
+        (active?.pending && active.action === button.dataset.aiAction)
+      )
+        return;
       open(button.dataset.aiAction, button);
     },
     { signal },
@@ -250,6 +273,7 @@ export function attachAITeacher(root, { signal, getRequest }) {
   signal?.addEventListener(
     'abort',
     () => {
+      clearTimeout(cooldownTimer);
       if (!active) return;
       active.dispose();
       const modal = document.querySelector('#modal');

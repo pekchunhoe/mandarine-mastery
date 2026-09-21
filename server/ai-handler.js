@@ -11,8 +11,13 @@ import {
   normalizeResult,
   validateTeachingResult,
 } from './ai-contract.js';
-import { DEFAULT_MODEL, THINKING_LEVEL, TIMEOUT_MS, generateTeachingResult } from './gemini.js';
-import { createTutorLimiter } from './ai-rate-limit.js';
+import {
+  DEFAULT_MODEL,
+  TIMEOUT_MS,
+  generateTeachingResult,
+  thinkingModeForModel,
+} from './gemini.js';
+import { clientRateLimit, createTutorLimiter } from './ai-rate-limit.js';
 
 let library;
 async function getVocabulary() {
@@ -74,7 +79,7 @@ export function createTeacherHandler({
   env = process.env,
   timeoutMs = TIMEOUT_MS,
   vocabulary = getVocabulary,
-  limiter = createTutorLimiter(),
+  limiter = createTutorLimiter({ perClient: clientRateLimit(env.AI_CLIENT_RPM) }),
   now = Date.now,
   logger = console,
 } = {}) {
@@ -103,14 +108,11 @@ export function createTeacherHandler({
         input.action === A.VOCABULARY_HELP ? input.context.availableVocabularyIds || [] : [];
       const store = candidates.length ? await vocabulary() : null;
       const records = candidates.map((id) => store.getWordById(id)).filter(Boolean);
-      input.vocabularyCandidates = records.map(
-        ({ id, word, definitionChinese, exampleSentence }) => ({
-          id,
-          word,
-          definitionChinese,
-          exampleSentence,
-        }),
-      );
+      input.vocabularyCandidates = records.map(({ id, word, definitionChinese }) => ({
+        id,
+        word,
+        definitionChinese,
+      }));
       delete input.context.availableVocabularyIds;
       if (input.action === A.VOCABULARY_HELP && !records.length) {
         data = {
@@ -122,7 +124,7 @@ export function createTeacherHandler({
         logger.info?.('AI teacher request started', {
           action,
           model,
-          thinkingLevel: THINKING_LEVEL,
+          thinkingMode: thinkingModeForModel(model),
         });
         release = limiter.acquire(request, env.VERCEL === '1');
         const cancellation = new Promise((_, reject) => {
@@ -172,7 +174,7 @@ export function createTeacherHandler({
         logger.info?.('AI teacher request completed', {
           action,
           model,
-          thinkingLevel: THINKING_LEVEL,
+          thinkingMode: thinkingModeForModel(model),
           durationMs: Math.max(0, now() - startedAt),
           status: 'success',
         });
@@ -205,15 +207,29 @@ export function createTeacherHandler({
         logger.warn?.('AI teacher request failed', {
           action,
           model,
-          thinkingLevel: THINKING_LEVEL,
+          thinkingMode: thinkingModeForModel(model),
           durationMs: Math.max(0, now() - startedAt),
           status: logStatus,
         });
       }
+      const retryAfterSeconds =
+        code === 'AI_RATE_LIMIT' &&
+        Number.isInteger(error?.retryAfterSeconds) &&
+        error.retryAfterSeconds >= 1 &&
+        error.retryAfterSeconds <= 60
+          ? error.retryAfterSeconds
+          : undefined;
       return reply(
-        { ok: false, error: { code, message: messages[code] || messages.AI_UNAVAILABLE } },
+        {
+          ok: false,
+          error: {
+            code,
+            message: messages[code] || messages.AI_UNAVAILABLE,
+            ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
+          },
+        },
         status,
-        status === 429 ? { 'Retry-After': '60' } : {},
+        retryAfterSeconds ? { 'Retry-After': String(retryAfterSeconds) } : {},
       );
     } finally {
       clearTimeout(timer);

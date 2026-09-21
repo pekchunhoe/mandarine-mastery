@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { createTeacherHandler } from '../server/ai-handler.js';
 import { actions, systemInstruction, MAX_BODY } from '../server/ai-contract.js';
 import {
+  buildGenerationConfig,
   DEFAULT_MODEL,
-  THINKING_LEVEL,
+  OUTPUT_TOKEN_CAPS,
   TIMEOUT_MS,
   generateTeachingResult,
 } from '../server/gemini.js';
@@ -174,14 +175,14 @@ test('operational timing logs are structured and exclude writing and secrets', a
   );
   assert.deepEqual(info[0], [
     'AI teacher request started',
-    { action: A.SENTENCE_CHECK, model: DEFAULT_MODEL, thinkingLevel: THINKING_LEVEL },
+    { action: A.SENTENCE_CHECK, model: DEFAULT_MODEL, thinkingMode: 'off' },
   ]);
   assert.deepEqual(info[1], [
     'AI teacher request completed',
     {
       action: A.SENTENCE_CHECK,
       model: DEFAULT_MODEL,
-      thinkingLevel: THINKING_LEVEL,
+      thinkingMode: 'off',
       durationMs: 17,
       status: 'success',
     },
@@ -191,7 +192,7 @@ test('operational timing logs are structured and exclude writing and secrets', a
     {
       action: A.SENTENCE_CHECK,
       model: DEFAULT_MODEL,
-      thinkingLevel: THINKING_LEVEL,
+      thinkingMode: 'off',
       durationMs: 17,
       status: 'unavailable',
     },
@@ -229,16 +230,22 @@ test('injection remains content; identity and browser system prompts discarded',
   );
 });
 test('only authoritative candidate IDs allowed', async () => {
+  let candidates;
   const result = await handler({
-    generate: async () =>
-      JSON.stringify({
+    generate: async (input) => {
+      candidates = input.vocabularyCandidates;
+      return JSON.stringify({
         ...fixtures[A.VOCABULARY_HELP],
         recommendations: [
           { ...fixtures[A.VOCABULARY_HELP].recommendations[0], vocabularyId: 'invented' },
         ],
-      }),
+      });
+    },
   })(request(body(A.VOCABULARY_HELP)));
   assert.deepEqual((await result.json()).data.recommendations, []);
+  assert.deepEqual(candidates, [
+    { id: word.id, word: word.word, definitionChinese: word.definitionChinese },
+  ]);
   const response = await handler()(
     request({ ...body(A.VOCABULARY_HELP), context: { availableVocabularyIds: ['unknown'] } }),
   );
@@ -273,10 +280,10 @@ test('installed SDK sends correct Interactions schema, server prompt and statele
     assert.match(request.url, /\/interactions/);
     assert.equal(sent.model, DEFAULT_MODEL);
     assert.equal(sent.store, false);
-    assert.deepEqual(sent.generation_config, {
-      max_output_tokens: 2500,
-      thinking_level: THINKING_LEVEL,
-    });
+    assert.deepEqual(
+      sent.generation_config,
+      buildGenerationConfig({ model: DEFAULT_MODEL, action: A.SENTENCE_HINT }),
+    );
     assert.deepEqual(sent.response_format.schema, actions[A.SENTENCE_HINT].schema);
     assert.match(sent.system_instruction, /NOT followed/);
     assert.ok(sent.system_instruction.endsWith(actions[A.SENTENCE_HINT].instruction));
@@ -294,6 +301,27 @@ test('installed SDK sends correct Interactions schema, server prompt and statele
   );
   assert.deepEqual(JSON.parse(raw), fixtures[A.SENTENCE_HINT]);
   assert.equal(count, 1);
+});
+test('generation config keeps Flash Lite fast, limits each action, and leaves unknown overrides optional', () => {
+  for (const action of Object.values(A))
+    assert.equal(
+      buildGenerationConfig({ model: DEFAULT_MODEL, action }).max_output_tokens,
+      OUTPUT_TOKEN_CAPS[action],
+    );
+  assert.deepEqual(buildGenerationConfig({ model: DEFAULT_MODEL, action: A.SENTENCE_HINT }), {
+    max_output_tokens: 650,
+    thinking_config: { thinking_budget: 0 },
+  });
+  assert.deepEqual(buildGenerationConfig({ model: 'gemini-3.8-flash', action: A.SENTENCE_HINT }), {
+    max_output_tokens: 650,
+    thinking_level: 'low',
+  });
+  assert.deepEqual(
+    buildGenerationConfig({ model: 'compatible-override', action: A.SENTENCE_HINT }),
+    {
+      max_output_tokens: 650,
+    },
+  );
 });
 test('SDK safety refusal yields neutral controlled error', async (t) => {
   t.mock.method(globalThis, 'fetch', async () =>
