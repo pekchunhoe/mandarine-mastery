@@ -53,5 +53,5 @@ await writeFile(
     .replace(/const CACHE = .*?;/, `const CACHE = '${cacheName}';`),
 );
 console.log(
-  `Built ${assets.length} static assets in dist. Vocabulary: ${records.length}. No backend required.`,
+  `Built ${assets.length} static assets in dist. Vocabulary: ${records.length}. AI uses the optional /api/gemini function.`,
 );

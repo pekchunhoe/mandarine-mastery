@@ -5,6 +5,9 @@ import { builders, practiceExample } from '../data/content.js';
 import { productionEligible } from '../js/writing-checks.js';
 import { state, persist } from '../js/state.js';
 import { enableDrag } from '../components/drag.js';
+import { aiToolbar, attachAITeacher } from '../components/ai-teacher.js';
+import { TUTOR_ACTION as A, TUTOR_ACTIVITY } from '../js/tutor-actions.js';
+import { sentenceVocabularyCandidates } from '../js/ai-vocabulary.js';
 export function freeSentence(root, ctx) {
   const key = `sentence:${ctx.item.id}`,
     saved = state.drafts[key]?.text || '';
@@ -16,6 +19,32 @@ export function freeSentence(root, ctx) {
     : situations.map((text) => `<option>${e(text)}</option>`).join('');
   root.innerHTML = `<h2>轮到你来造句</h2><div class="target-word">${e(ctx.item.word)}</div><p class="question-instruction">想想谁在什么地方，做了什么。用这个词语，写一句发生在生活中的话。</p><details class="reference-details" ${ctx.difficulty === 'easy' ? 'open' : ''}><summary>看看参考用法</summary><p class="quote">${highlight(practiceExample(ctx.item), [ctx.item.word])}</p></details><label for="sentence-context">我想写的情境</label><select id="sentence-context" ${isBuilder ? 'class="sentence-scenario-select"' : ''}>${situationOptions}</select><label for="own-sentence" style="margin-top:16px">我的句子</label><textarea id="own-sentence" placeholder="把人物、事情和想法写清楚。">${e(saved)}</textarea>${isBuilder ? `<div class="action-bar sentence-copy-actions"><button type="button" class="btn" id="copy-sentence" ${saved.trim() ? '' : 'disabled'}><span aria-hidden="true">📋</span> 复制句子</button></div>` : ''}<p class="save-status" id="sentence-save">草稿保存在这台设备</p><div class="check-row"><input type="checkbox" id="sentence-selfcheck"><label for="sentence-selfcheck">我读过一遍，确认词语用在真实的情境里。</label></div><button class="btn primary" id="submit-sentence">记录我的造句练习</button><p class="source-label">自动检查只检查用词、字数与标点。句意和用法请和老师一起读一读。</p>`;
   const input = root.querySelector('#own-sentence');
+  if (isBuilder) {
+    root.insertAdjacentHTML('beforeend', aiToolbar(TUTOR_ACTIVITY.SENTENCE));
+    const situation = root.querySelector('#sentence-context');
+    situation.insertAdjacentHTML('afterend', '<label id="custom-sentence-context-label" hidden>我的情境<input id="custom-sentence-context" maxlength="240" placeholder="例如：运动会接力赛"></label>');
+    const custom = root.querySelector('#custom-sentence-context');
+    situation.value = state.drafts[key]?.situation || situation.value;
+    custom.value = state.drafts[key]?.customSituation || '';
+    const updateSituation = () => {
+      root.querySelector('#custom-sentence-context-label').hidden = situation.value !== CUSTOM_SENTENCE_SCENARIO;
+    };
+    updateSituation();
+    const saveSituation = () => {
+      updateSituation();
+      state.drafts[key] = { ...state.drafts[key], text: input.value, word: ctx.item.word, kind: 'sentence', situation: situation.value, customSituation: custom.value, at: new Date().toISOString() };
+      persist();
+    };
+    situation.addEventListener('change', saveSituation, { signal: ctx.signal });
+    custom.addEventListener('input', saveSituation, { signal: ctx.signal });
+    attachAITeacher(root, { signal: ctx.signal, getRequest(action) {
+      const context = situation.value === CUSTOM_SENTENCE_SCENARIO ? custom.value : situation.value;
+      return { activity: TUTOR_ACTIVITY.SENTENCE, context: {
+        topic: ctx.item.word, situation: context, studentSentence: input.value,
+        availableVocabularyIds: action === A.VOCABULARY_HELP ? sentenceVocabularyCandidates(context, ctx.item.word, state.settings.grade, input.value) : [],
+      } };
+    } });
+  }
   const copy = root.querySelector('#copy-sentence');
   copy?.addEventListener('click', async () => {
     if (!input.value.trim()) return;
@@ -27,6 +56,7 @@ export function freeSentence(root, ctx) {
     (event) => {
       if (copy) copy.disabled = !event.target.value.trim();
       state.drafts[key] = {
+        ...state.drafts[key],
         text: event.target.value,
         word: ctx.item.word,
         at: new Date().toISOString(),
@@ -76,21 +106,40 @@ export function sentenceBuilder(root, ctx) {
     ['event', '事情 / 动作'],
     ['action', '结果 / 感受'],
   ];
-  let selected = {};
+  const draftKey = `builder:${ctx.item.id}`;
+  const selected = Object.fromEntries(
+    groups.flatMap(([key]) => {
+      const index = state.drafts[draftKey]?.blocks?.[key];
+      return Number.isInteger(index) && index >= 0 && index < data[key].length ? [[key, index]] : [];
+    }),
+  );
+  ctx.reset = () => {
+    delete state.drafts[draftKey];
+    persist();
+  };
   const sentence = () =>
     groups.every(([k]) => selected[k] !== undefined)
       ? `${data.when[selected.when]}，${data.who[selected.who]}${data.event[selected.event]}${data.action[selected.action]}。`
       : '';
   function draw() {
-    root.innerHTML = `<h2>用积木，搭出不同的句子</h2><div class="row"><div class="target-word">${e(ctx.item.word)}</div><span class="pill">每组选择一块</span></div><p class="question-instruction">点选积木，或把积木拖进下面的句子区。换一种组合，也能说得通。</p><div class="build-groups">${groups.map(([key, label]) => `<section class="build-group"><h3>${label}</h3><div class="chip-tray">${data[key].map((text, i) => `<button class="word-chip tile ${selected[key] === i ? 'selected' : ''}" data-part="${key}:${i}" data-drag="${key}:${i}" aria-pressed="${selected[key] === i}">${e(text)}</button>`).join('')}</div></section>`).join('')}</div><div class="sentence-display" data-drop="sentence" aria-live="polite">${sentence() ? highlight(sentence(), [ctx.item.word]) : '选好四组积木，看看你的句子。'}</div><div class="action-bar"><button class="btn primary" id="finish-builder" ${sentence() ? '' : 'disabled'}>读读我的句子</button><a class="btn" href="#activity/builder?word=${encodeURIComponent(ctx.item.id)}&mode=free">挑战：自己写一句</a></div>`;
+    root.innerHTML = `<h2>用积木，搭出不同的句子</h2><div class="row"><div class="target-word">${e(ctx.item.word)}</div><span class="pill">每组选择一块</span></div><p class="question-instruction">点选积木，或把积木拖进下面的句子区。换一种组合，也能说得通。</p><div class="build-groups">${groups.map(([key, label]) => `<section class="build-group"><h3>${label}</h3><div class="chip-tray">${data[key].map((text, i) => `<button class="word-chip tile ${selected[key] === i ? 'selected' : ''}" data-part="${key}:${i}" data-drag="${key}:${i}" aria-pressed="${selected[key] === i}">${e(text)}</button>`).join('')}</div></section>`).join('')}</div><div class="sentence-display" data-drop="sentence" aria-live="polite">${sentence() ? highlight(sentence(), [ctx.item.word]) : '选好四组积木，看看你的句子。'}</div><div class="action-bar"><button class="btn primary" id="finish-builder" ${sentence() ? '' : 'disabled'}>读读我的句子</button><a class="btn" href="#activity/builder?word=${encodeURIComponent(ctx.item.id)}&mode=free">挑战：自己写一句</a></div>${aiToolbar(TUTOR_ACTIVITY.SENTENCE)}`;
   }
   function choose(value) {
     if (ctx.finished) return;
     const [key, index] = value.split(':');
+    if (!groups.some(([part]) => part === key) || !Number.isInteger(Number(index)) || !data[key][Number(index)]) return;
     selected[key] = Number(index);
+    state.drafts[draftKey] = { text: sentence(), blocks: { ...selected }, word: ctx.item.word, kind: 'builder', at: new Date().toISOString() };
+    persist();
     draw();
   }
   draw();
+  attachAITeacher(root, { signal: ctx.signal, getRequest(action) {
+    return { activity: TUTOR_ACTIVITY.SENTENCE, context: {
+      topic: ctx.item.word, situation: '用积木造句', studentSentence: sentence(),
+      availableVocabularyIds: action === A.VOCABULARY_HELP ? sentenceVocabularyCandidates('用积木造句', ctx.item.word, state.settings.grade, sentence()) : [],
+    } };
+  } });
   enableDrag(
     root,
     (id, target) => {

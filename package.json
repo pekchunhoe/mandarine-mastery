@@ -7,6 +7,8 @@
     "dev": "node tools/serve.mjs",
     "build": "node tools/build.mjs",
     "test": "node --test tests/*.test.mjs",
+    "test:ai-browser": "node --test tests/ai-teacher-browser.mjs tests/guided-tutor-browser.mjs",
+    "check:ai-security": "node tools/check-ai-security.mjs",
     "import:vocabulary": "node tools/import-workbook.mjs",
     "import-vocabulary": "node tools/import-workbook.mjs",
     "vocabulary:export-master": "node tools/export-master-vocabulary.mjs",
@@ -26,6 +28,7 @@
     "prettier": "^3.9.6"
   },
   "dependencies": {
+    "@google/genai": "2.23.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

@@ -13,6 +13,8 @@ export function showModal(title, body, { className = '', closeLabel = '关闭', 
   modal.innerHTML = `<button class="icon-btn modal-close" data-close-modal aria-label="${e(closeLabel)}">×</button><h2 id="modal-title">${e(title)}</h2>${body}`;
   if (!modal.open) modal.showModal();
   modal.onclose = () => {
+    // A queued close event from the previous panel must not clean up a reopened one.
+    if (modal.open) return;
     stop();
     modal.__cleanup?.();
     modal.__cleanup = null;

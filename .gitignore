@@ -4,3 +4,6 @@ test-results/
 .vercel/
 .npm-cache/
 vendor/
+.env
+.env.*
+!.env.example

@@ -268,7 +268,10 @@ export function runActivity(root, id, params) {
         '<h2>这道题暂时无法显示</h2><p>请跳过这题，或回到词语库换个词语。</p>';
     }
     $('#reset-activity', root).onclick = () =>
-      confirmAction('重做本题？', '只清空本题的选择。学习记录和已保存的作文草稿会保留。', draw);
+      confirmAction('重做本题？', '只清空本题的选择。学习记录和已保存的作文草稿会保留。', () => {
+        ctx.reset?.();
+        draw();
+      });
     $('#skip-question', root).onclick = () => {
       if (writingIds.includes(activity.id)) {
         toast('已保存的草稿可以从同一活动继续');

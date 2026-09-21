@@ -353,6 +353,27 @@
   opacity: 1;
   transform: translate(-50%, 0);
 }
+.ai-toolbar {
+  margin-block: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+#submit-sentence { scroll-margin-bottom: 90px; }
+.ai-toolbar > p { margin: 6px 0 0; }
+.ai-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.ai-actions .btn { min-height: 44px; padding: 8px 6px; white-space: normal; font-size: .9rem; }
+.ai-dialog { overflow-wrap: anywhere; }
+.ai-dialog .ai-result { min-height: 130px; }
+.ai-dialog article { border-bottom: 1px solid var(--line); padding-block: 8px; }
+.ai-dialog .modal-close { position: sticky; top: 0; background: var(--paper); min-width: 44px; min-height: 44px; z-index: 1; }
+.ai-dialog h2 { padding-right: 44px; }
+.ai-dialog .action-bar { flex-wrap: wrap; }
+.ai-actions button:focus-visible, .ai-dialog button:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
+@media (min-width: 700px) { .ai-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 400px) { dialog.ai-dialog { padding: 16px; } }
+@media (prefers-reduced-motion: reduce) { .ai-dialog, .ai-toolbar * { animation: none; transition: none; } }
 dialog {
   border: 1px solid var(--line);
   border-radius: 24px;

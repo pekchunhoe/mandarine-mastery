@@ -2,7 +2,32 @@
 
 从认词、造句到作文，一步一步学会用词。
 
-A static Mandarin learning lab for Malaysian SJK(C) Years 1–6, initially supplied with Year 3–4 vocabulary. Vanilla HTML, CSS and JavaScript modules; no runtime framework, login, API key or backend.
+A Mandarin learning lab for Malaysian SJK(C) Years 1–6, initially supplied with Year 3–4 vocabulary. Vanilla HTML, CSS and JavaScript modules with an optional server-side AI teacher. All non-AI learning activities work without a key or backend.
+
+## Gemini AI老师 setup
+
+The Guided Writing Tutor supports 造句积木 (给我提示、检查句子、帮我扩写、写得更生动、推荐好词) and 要点导写 (给我提示、推荐好词、下一步怎么写、检查这一段、作文体检). It guides independent revision and never inserts or replaces writing. Sentence checks distinguish actual errors from optional style suggestions. Paragraph review prefers selected text, then the caret paragraph; next-step guidance receives earlier paragraphs. Empty hints and essays shorter than 50 meaningful characters are handled locally without Gemini quota.
+
+Use Node.js 22 or newer (the project already uses JSON import attributes). Install with `npm ci`. Copy `.env.example` to `.env.local` and set these **server-only** variables:
+
+```dotenv
+GEMINI_API_KEY=your-server-key
+GEMINI_MODEL=
+```
+
+Leave `GEMINI_MODEL` blank to use `gemini-3.8-flash`, or set a compatible Gemini model that supports structured output through the Interactions API. `npm run dev` serves both the app and `/api/gemini` at `http://localhost:4173`. Restart after changing environment files. Shell environment variables take precedence over `.env.local`, then `.env`. Never use `VITE_*`, `NEXT_PUBLIC_*`, browser storage or a committed environment file for the key.
+
+For the existing GitHub → Vercel workflow, keep `npm run build` and output directory `dist`. The ESM function is `api/gemini.js`; server modules are excluded from static build output. In **Vercel Project → Settings → Environment Variables**, add `GEMINI_API_KEY` and optionally `GEMINI_MODEL` to the required environments. Mark production/preview secrets sensitive where supported. Redeploy after adding or changing variables. This implementation does not push or deploy automatically.
+
+The SDK is pinned to `@google/genai` 2.23.0. The adapter uses Google's [recommended Interactions API](https://ai.google.dev/gemini-api/docs/interactions-overview), [structured output](https://ai.google.dev/gemini-api/docs/structured-output), and the current [Flash model](https://ai.google.dev/gemini-api/docs/models). It sets `store: false`, uses no conversation history or tools, and retains standard safety safeguards. Only writing, limited exercise context and up to 16 server-resolved vocabulary candidates are sent. Personal information typed into an essay is still part of that submitted text; students are reminded not to include it.
+
+One primary endpoint, `POST /api/gemini`, accepts eight predefined actions: `sentence_hint`, `sentence_check`, `sentence_expand`, `sentence_vivid`, `vocabulary_help`, `essay_next_step`, `paragraph_review`, `essay_review`. Public action constants/input rules live in `js/tutor-actions.js`; prompts and output schemas remain in `server/ai-contract.js`. Requests contain only `{action, activity, context}` with action-specific fields. The server revalidates independently and rejects unexpected output fields. Vocabulary IDs are checked against the published library; unknown/duplicate IDs are discarded and trusted word records are resolved on the server, including pinyin, definitions, synonyms and curated examples.
+
+Limits: 500 characters per sentence, 2000 per paragraph, 6000 per essay, 8000 total context characters, 32 KiB JSON body, 16 vocabulary candidates, and 18,000 output characters plus bounded schema fields. Calls use at most one Gemini request with SDK retries disabled. Upstream timeout is 25 seconds; browser timeout is 30 seconds. Close, navigation and replacement requests cancel local processing, and stale results cannot replace current feedback. Provider processing already underway may still incur usage. Errors use friendly Mandarin, and server logs contain only controlled codes. No AI result is saved to the draft.
+
+Server throttling allows 8 calls per client/minute, 40 total calls/minute and 4 concurrent calls **per function instance**. On Vercel it uses the trusted proxy address, hashed with an ephemeral salt, solely for local throttling; this is never logged or sent to Gemini. Local development uses one shared bucket. These limits reset on cold start and are not distributed. The public endpoint has no authentication; configure Vercel Firewall deployment-wide rate limits and Google project quotas before public use. Device-only vocabulary additions become eligible for server recommendations after publication.
+
+Verification (no paid Gemini calls): `npm test`, `npm run test:ai-browser` with the dev server running, `npm run build`, and `npm run check:ai-security`. Existing browser regression scripts remain available. Automated fixtures verify the contract and UI, not live-model teaching quality; a configured deployment still needs an educator's live-content review.
 
 ## Add and manage vocabulary
 
