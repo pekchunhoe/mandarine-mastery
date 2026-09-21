@@ -2,7 +2,9 @@ import { GoogleGenAI } from '@google/genai';
 import { actions, systemInstruction, TeacherError, MAX_OUTPUT } from './ai-contract.js';
 
 export const DEFAULT_MODEL = 'gemini-3.8-flash';
-export const TIMEOUT_MS = 25000;
+// Keep a margin below Vercel's 40-second function duration for response cleanup.
+export const TIMEOUT_MS = 35000;
+export const THINKING_LEVEL = 'low';
 
 // Isolated SDK adapter. No browser imports, conversation storage, tools or secrets in prompts.
 export async function generateTeachingResult(input, { apiKey, model, signal }) {
@@ -22,7 +24,7 @@ export async function generateTeachingResult(input, { apiKey, model, signal }) {
         mime_type: 'application/json',
         schema: actions[input.action].schema,
       },
-      generation_config: { max_output_tokens: 2500 },
+      generation_config: { max_output_tokens: 2500, thinking_level: THINKING_LEVEL },
     },
     { signal, timeout: TIMEOUT_MS, maxRetries: 0 },
   );

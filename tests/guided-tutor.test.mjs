@@ -9,7 +9,7 @@ import {
   normalizeResult,
   validateInput,
 } from '../server/ai-contract.js';
-import { requestTeaching } from '../js/ai-teacher.js';
+import { BROWSER_TIMEOUT_MS, requestTeaching } from '../js/ai-teacher.js';
 import { TUTOR_ACTION as A, TUTOR_ACTIVITY as B } from '../js/tutor-actions.js';
 import { inputFor, resultFor, word, sentence, malformedResults } from './tutor-fixtures.mjs';
 const env = { GEMINI_API_KEY: 'fake-server-secret' };
@@ -23,6 +23,7 @@ const request = (input = inputFor(A.SENTENCE_CHECK), signal) =>
 const handler = (options) =>
   createTeacherHandler({
     env,
+    logger: { info() {}, warn() {} },
     generate: async (input) => JSON.stringify(resultFor(input.action, input.context)),
     vocabulary: async () => ({ getWordById: (id) => (id === word.id ? word : undefined) }),
     ...options,
@@ -32,7 +33,9 @@ for (const action of Object.values(A))
   test(`${action}: malformed output matrix returns controlled errors and recovers`, async () => {
     for (const [name, raw] of malformedResults(resultFor(action))) {
       let calls = 0;
-      const endpoint = handler({ generate: async () => ++calls === 1 ? raw : JSON.stringify(resultFor(action)) });
+      const endpoint = handler({
+        generate: async () => (++calls === 1 ? raw : JSON.stringify(resultFor(action))),
+      });
       const response = await endpoint(request(inputFor(action)));
       assert.equal(response.status, 502, name);
       const body = await response.json();
@@ -252,11 +255,11 @@ test('concurrency and instance-wide limits bounded independently of client ident
     /AI_RATE_LIMIT/,
   );
 });
-test('output size bounded; logs contain controlled codes, not secrets', async (t) => {
+test('output size bounded; logs contain controlled codes, not secrets', async () => {
   const logs = [];
-  t.mock.method(console, 'warn', (...args) => logs.push(args.join(' ')));
+  const logger = { info() {}, warn: (...args) => logs.push(JSON.stringify(args)) };
   assert.equal(
-    (await handler({ generate: async () => 'x'.repeat(MAX_OUTPUT + 1) })(request())).status,
+    (await handler({ logger, generate: async () => 'x'.repeat(MAX_OUTPUT + 1) })(request())).status,
     502,
   );
   assert.ok(logs.length);
@@ -291,6 +294,7 @@ test('both injection examples remain content; unrelated identity and prompts dis
   }
 });
 test('client abort and timeout propagate without leaking raw errors', async (t) => {
+  assert.equal(BROWSER_TIMEOUT_MS, 40000);
   t.mock.timers.enable({ apis: ['setTimeout'] });
   t.mock.method(
     globalThis,
@@ -309,7 +313,7 @@ test('client abort and timeout propagate without leaking raw errors', async (t) 
     context: { studentSentence: sentence },
   });
   const checked = assert.rejects(pending, /时间有点长/);
-  t.mock.timers.tick(30001);
+  t.mock.timers.tick(BROWSER_TIMEOUT_MS + 1);
   await checked;
   const controller = new AbortController();
   controller.abort();

@@ -7,6 +7,8 @@ import {
   MAX_BODY,
 } from './tutor-actions.js';
 export class AIError extends Error {}
+// Leave five seconds for the server's controlled response after its 35-second upstream cutoff.
+export const BROWSER_TIMEOUT_MS = 40000;
 const unavailable = '暂时无法联系 AI老师，请稍后再试。';
 const errors = {
   AI_NOT_CONFIGURED: 'AI老师暂时还不能使用，请联系老师。其他练习仍可正常使用。',
@@ -39,7 +41,7 @@ export async function requestTeaching(action, payload, { signal } = {}) {
   const timer = setTimeout(() => {
     timedOut = true;
     abort();
-  }, 30000);
+  }, BROWSER_TIMEOUT_MS);
   try {
     const response = await fetch('/api/gemini', {
       method: 'POST',

@@ -11,7 +11,7 @@ import {
   normalizeResult,
   validateTeachingResult,
 } from './ai-contract.js';
-import { DEFAULT_MODEL, TIMEOUT_MS, generateTeachingResult } from './gemini.js';
+import { DEFAULT_MODEL, THINKING_LEVEL, TIMEOUT_MS, generateTeachingResult } from './gemini.js';
 import { createTutorLimiter } from './ai-rate-limit.js';
 
 let library;
@@ -75,6 +75,8 @@ export function createTeacherHandler({
   timeoutMs = TIMEOUT_MS,
   vocabulary = getVocabulary,
   limiter = createTutorLimiter(),
+  now = Date.now,
+  logger = console,
 } = {}) {
   return async (request) => {
     if (request.method !== 'POST')
@@ -83,7 +85,7 @@ export function createTeacherHandler({
         405,
         { Allow: 'POST' },
       );
-    let timer, release, cancelRequest;
+    let timer, release, cancelRequest, action, model, startedAt;
     const controller = new AbortController();
     try {
       const origin = request.headers.get('origin');
@@ -95,7 +97,8 @@ export function createTeacherHandler({
       if (data) return reply({ ok: true, action: input.action, data });
       const apiKey = env.GEMINI_API_KEY?.trim();
       if (!apiKey) throw new TeacherError('AI_NOT_CONFIGURED', 503);
-      const model = env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
+      model = env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
+      action = input.action;
       const candidates =
         input.action === A.VOCABULARY_HELP ? input.context.availableVocabularyIds || [] : [];
       const store = candidates.length ? await vocabulary() : null;
@@ -115,6 +118,12 @@ export function createTeacherHandler({
           studentTask: '打开词语库，找一个合适的词，自己试着写一句话。',
         };
       } else {
+        startedAt = now();
+        logger.info?.('AI teacher request started', {
+          action,
+          model,
+          thinkingLevel: THINKING_LEVEL,
+        });
         release = limiter.acquire(request, env.VERCEL === '1');
         const cancellation = new Promise((_, reject) => {
           cancelRequest = () => {
@@ -159,6 +168,14 @@ export function createTeacherHandler({
           .map((item) => ({ ...item, vocabulary: trustedWord(allowed.get(item.vocabularyId)) }));
       }
       if (JSON.stringify(data).includes(apiKey)) throw new TeacherError('AI_INVALID_RESPONSE', 502);
+      if (startedAt !== undefined)
+        logger.info?.('AI teacher request completed', {
+          action,
+          model,
+          thinkingLevel: THINKING_LEVEL,
+          durationMs: Math.max(0, now() - startedAt),
+          status: 'success',
+        });
       return reply({ ok: true, action: input.action, data });
     } catch (error) {
       let code = error instanceof TeacherError ? error.code : 'AI_UNAVAILABLE';
@@ -175,7 +192,24 @@ export function createTeacherHandler({
         code = 'AI_TIMEOUT';
         status = 504;
       }
-      if (status >= 500) console.warn('AI teacher request failed:', code);
+      if (startedAt !== undefined) {
+        const logStatus =
+          {
+            AI_TIMEOUT: 'timeout',
+            AI_UNAVAILABLE: 'unavailable',
+            AI_RATE_LIMIT: 'rate_limited',
+            AI_REFUSAL: 'safety',
+            AI_INVALID_RESPONSE: 'malformed_response',
+            AI_CANCELLED: 'cancelled',
+          }[code] || 'unavailable';
+        logger.warn?.('AI teacher request failed', {
+          action,
+          model,
+          thinkingLevel: THINKING_LEVEL,
+          durationMs: Math.max(0, now() - startedAt),
+          status: logStatus,
+        });
+      }
       return reply(
         { ok: false, error: { code, message: messages[code] || messages.AI_UNAVAILABLE } },
         status,

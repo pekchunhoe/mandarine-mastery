@@ -2,7 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTeacherHandler } from '../server/ai-handler.js';
 import { actions, systemInstruction, MAX_BODY } from '../server/ai-contract.js';
-import { DEFAULT_MODEL, generateTeachingResult } from '../server/gemini.js';
+import {
+  DEFAULT_MODEL,
+  THINKING_LEVEL,
+  TIMEOUT_MS,
+  generateTeachingResult,
+} from '../server/gemini.js';
 import { TUTOR_ACTION as A } from '../js/tutor-actions.js';
 import { inputFor, resultFor, word } from './tutor-fixtures.mjs';
 
@@ -21,6 +26,7 @@ const request = (value = body(), extra = {}) =>
 const handler = (options = {}) =>
   createTeacherHandler({
     env,
+    logger: { info() {}, warn() {} },
     generate: async (input) => JSON.stringify(fixtures[input.action]),
     vocabulary: async () => ({
       getWordById: (id) => (id === word.id ? word : undefined),
@@ -135,6 +141,65 @@ test('timeout responds and aborts SDK', async () => {
   });
   assert.equal(signal.aborted, true);
 });
+test('response below the controlled timeout succeeds', async () => {
+  assert.equal(TIMEOUT_MS, 35000);
+  const response = await handler({
+    timeoutMs: 30,
+    generate: async (input) => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return JSON.stringify(resultFor(input.action, input.context));
+    },
+  })(request(inputFor(A.SENTENCE_CHECK)));
+  assert.equal(response.status, 200);
+});
+test('operational timing logs are structured and exclude writing and secrets', async () => {
+  const info = [],
+    warn = [];
+  const logger = { info: (...args) => info.push(args), warn: (...args) => warn.push(args) };
+  let time = 100;
+  const now = () => (time += 17);
+  const input = inputFor(A.SENTENCE_CHECK);
+  assert.equal((await handler({ now, logger })(request(input))).status, 200);
+  assert.equal(
+    (
+      await handler({
+        now,
+        logger,
+        generate: async () => {
+          throw Error(`${env.GEMINI_API_KEY} ${input.context.studentSentence}`);
+        },
+      })(request(input))
+    ).status,
+    503,
+  );
+  assert.deepEqual(info[0], [
+    'AI teacher request started',
+    { action: A.SENTENCE_CHECK, model: DEFAULT_MODEL, thinkingLevel: THINKING_LEVEL },
+  ]);
+  assert.deepEqual(info[1], [
+    'AI teacher request completed',
+    {
+      action: A.SENTENCE_CHECK,
+      model: DEFAULT_MODEL,
+      thinkingLevel: THINKING_LEVEL,
+      durationMs: 17,
+      status: 'success',
+    },
+  ]);
+  assert.deepEqual(warn[0], [
+    'AI teacher request failed',
+    {
+      action: A.SENTENCE_CHECK,
+      model: DEFAULT_MODEL,
+      thinkingLevel: THINKING_LEVEL,
+      durationMs: 17,
+      status: 'unavailable',
+    },
+  ]);
+  const logged = JSON.stringify([...info, ...warn]);
+  for (const privateText of [env.GEMINI_API_KEY, input.context.studentSentence, systemInstruction])
+    assert.ok(!logged.includes(privateText));
+});
 test('secret in otherwise valid output is never returned', async () =>
   failure(request(), 'AI_INVALID_RESPONSE', 502, {
     generate: async () => JSON.stringify({ ...feedback, studentTask: env.GEMINI_API_KEY }),
@@ -208,6 +273,10 @@ test('installed SDK sends correct Interactions schema, server prompt and statele
     assert.match(request.url, /\/interactions/);
     assert.equal(sent.model, DEFAULT_MODEL);
     assert.equal(sent.store, false);
+    assert.deepEqual(sent.generation_config, {
+      max_output_tokens: 2500,
+      thinking_level: THINKING_LEVEL,
+    });
     assert.deepEqual(sent.response_format.schema, actions[A.SENTENCE_HINT].schema);
     assert.match(sent.system_instruction, /NOT followed/);
     assert.ok(sent.system_instruction.endsWith(actions[A.SENTENCE_HINT].instruction));
