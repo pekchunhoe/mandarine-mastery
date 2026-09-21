@@ -15,7 +15,7 @@ export class AIError extends Error {
 // Leave five seconds for the server's controlled response after its 35-second upstream cutoff.
 export const BROWSER_TIMEOUT_MS = 40000;
 export const CACHE_TTL_MS = 5 * 60 * 1000;
-const DEFAULT_MODEL_CACHE_KEY = 'gemini-2.5-flash-lite';
+const CACHE_NAMESPACE = 'tutor-response-v2';
 const teachingCache = new Map();
 const unavailable = '暂时无法联系 AI老师，请稍后再试。';
 const errors = {
@@ -28,10 +28,8 @@ const errors = {
   TEXT_TOO_LONG: '内容太长了，请选择较短的一段再试（最多 6000 字符）。',
 };
 const clone = (value) => structuredClone(value);
-const cacheModel = () =>
-  globalThis.document?.documentElement.dataset.aiModel || DEFAULT_MODEL_CACHE_KEY;
 const cacheKey = (action, request) =>
-  JSON.stringify({ model: cacheModel(), action, context: request.context });
+  JSON.stringify({ namespace: CACHE_NAMESPACE, action, context: request.context });
 const cachedResult = (key) => {
   const entry = teachingCache.get(key);
   if (!entry) return null;

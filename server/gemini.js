@@ -1,34 +1,57 @@
 import { GoogleGenAI } from '@google/genai';
 import { actions, systemInstruction, TeacherError, MAX_OUTPUT } from './ai-contract.js';
 
-export const DEFAULT_MODEL = 'gemini-2.5-flash-lite';
+export const DEFAULT_FAST_MODEL = 'gemini-2.5-flash-lite';
+export const DEFAULT_ADVANCED_MODEL = 'gemini-2.5-flash';
+// Compatibility export for server integrations that previously imported it.
+export const DEFAULT_MODEL = DEFAULT_FAST_MODEL;
+export const FAST_ACTIONS = new Set([
+  'sentence_hint',
+  'sentence_check',
+  'sentence_expand',
+  'sentence_vivid',
+  'vocabulary_help',
+  'essay_next_step',
+]);
+export const ADVANCED_ACTIONS = new Set(['paragraph_review', 'essay_review']);
 // Keep a margin below Vercel's 40-second function duration for response cleanup.
 export const TIMEOUT_MS = 35000;
 export const OUTPUT_TOKEN_CAPS = {
-  sentence_hint: 650,
-  sentence_check: 900,
-  sentence_expand: 1000,
-  sentence_vivid: 900,
-  vocabulary_help: 900,
-  essay_next_step: 900,
-  paragraph_review: 1300,
-  essay_review: 1600,
+  sentence_hint: 320,
+  sentence_check: 380,
+  sentence_expand: 500,
+  sentence_vivid: 500,
+  vocabulary_help: 420,
+  essay_next_step: 480,
+  paragraph_review: 700,
+  essay_review: 1100,
 };
 
-export function buildGenerationConfig({ model, action }) {
-  const config = { max_output_tokens: OUTPUT_TOKEN_CAPS[action] };
-  const normalizedModel = model.trim().toLowerCase();
-  if (normalizedModel === 'gemini-2.5-flash-lite')
-    return { ...config, thinking_config: { thinking_budget: 0 } };
-  if (normalizedModel === 'gemini-3.8-flash') return { ...config, thinking_level: 'low' };
-  return config;
+const configuredModel = (value, fallback) =>
+  typeof value === 'string' && value.trim() ? value.trim() : fallback;
+
+// Browser input never controls this choice. The legacy model only preserves the
+// routine route for existing deployments; it cannot replace the advanced route.
+export function selectGeminiModel(action, env = {}) {
+  const routeClass = ADVANCED_ACTIONS.has(action) ? 'advanced' : 'fast';
+  if (routeClass === 'advanced')
+    return {
+      routeClass,
+      model: configuredModel(env.GEMINI_ADVANCED_MODEL, DEFAULT_ADVANCED_MODEL),
+    };
+  return {
+    routeClass,
+    model: configuredModel(
+      env.GEMINI_FAST_MODEL,
+      configuredModel(env.GEMINI_MODEL, DEFAULT_FAST_MODEL),
+    ),
+  };
 }
 
-export function thinkingModeForModel(model) {
-  const normalizedModel = model.trim().toLowerCase();
-  if (normalizedModel === 'gemini-2.5-flash-lite') return 'off';
-  if (normalizedModel === 'gemini-3.8-flash') return 'low';
-  return 'default';
+// The Interactions API uses the 2.5 models' defaults: Flash-Lite is off by
+// default, while Flash retains its model-appropriate adaptive reasoning.
+export function buildGenerationConfig({ action }) {
+  return { max_output_tokens: OUTPUT_TOKEN_CAPS[action] };
 }
 
 // Isolated SDK adapter. No browser imports, conversation storage, tools or secrets in prompts.
@@ -49,7 +72,7 @@ export async function generateTeachingResult(input, { apiKey, model, signal }) {
         mime_type: 'application/json',
         schema: actions[input.action].schema,
       },
-      generation_config: buildGenerationConfig({ model, action: input.action }),
+      generation_config: buildGenerationConfig({ action: input.action }),
     },
     { signal, timeout: TIMEOUT_MS, maxRetries: 0 },
   );

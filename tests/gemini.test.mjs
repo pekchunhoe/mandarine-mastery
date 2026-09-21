@@ -1,11 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createTeacherHandler } from '../server/ai-handler.js';
+import {
+  createTeacherHandler,
+  upstreamDiagnostic,
+  upstreamStatusCategory,
+} from '../server/ai-handler.js';
 import { actions, systemInstruction, MAX_BODY } from '../server/ai-contract.js';
 import {
   buildGenerationConfig,
-  DEFAULT_MODEL,
+  DEFAULT_ADVANCED_MODEL,
+  DEFAULT_FAST_MODEL,
   OUTPUT_TOKEN_CAPS,
+  selectGeminiModel,
   TIMEOUT_MS,
   generateTeachingResult,
 } from '../server/gemini.js';
@@ -93,7 +99,7 @@ test('all actions use their own structured schema and prompt; secret stays outsi
     const response = await handler({
       generate: async (input, options) => {
         assert.equal(input.action, action);
-        assert.equal(options.model, DEFAULT_MODEL);
+        assert.equal(options.model, selectGeminiModel(action, env).model);
         assert.ok(actions[action].instruction);
         assert.ok(actions[action].schema.required.length);
         assert.ok(!JSON.stringify(input).includes(env.GEMINI_API_KEY));
@@ -106,14 +112,59 @@ test('all actions use their own structured schema and prompt; secret stays outsi
     );
   }
 });
-test('model override supported', async () => {
+test('server routes validated actions and preserves a fast-only legacy override', async () => {
+  for (const action of [
+    A.SENTENCE_HINT,
+    A.SENTENCE_CHECK,
+    A.SENTENCE_EXPAND,
+    A.SENTENCE_VIVID,
+    A.VOCABULARY_HELP,
+    A.ESSAY_NEXT_STEP,
+  ])
+    assert.deepEqual(selectGeminiModel(action), { routeClass: 'fast', model: DEFAULT_FAST_MODEL });
+  for (const action of [A.PARAGRAPH_REVIEW, A.ESSAY_REVIEW])
+    assert.deepEqual(selectGeminiModel(action), {
+      routeClass: 'advanced',
+      model: DEFAULT_ADVANCED_MODEL,
+    });
+  assert.deepEqual(selectGeminiModel('internal-default'), {
+    routeClass: 'fast',
+    model: DEFAULT_FAST_MODEL,
+  });
   await handler({
-    env: { ...env, GEMINI_MODEL: 'override-model' },
+    env: {
+      ...env,
+      GEMINI_MODEL: 'legacy-fast',
+      GEMINI_FAST_MODEL: 'configured-fast',
+      GEMINI_ADVANCED_MODEL: 'configured-advanced',
+    },
     generate: async (_, options) => {
-      assert.equal(options.model, 'override-model');
+      assert.equal(options.model, 'configured-advanced');
       return JSON.stringify(feedback);
     },
   })(request());
+  await handler({
+    env: { ...env, GEMINI_MODEL: 'legacy-fast' },
+    generate: async (_, options) => {
+      assert.equal(options.model, 'legacy-fast');
+      return JSON.stringify(resultFor(A.SENTENCE_HINT));
+    },
+  })(request(body(A.SENTENCE_HINT)));
+  await handler({
+    env: { ...env, GEMINI_MODEL: 'legacy-fast' },
+    generate: async (_, options) => {
+      assert.equal(options.model, DEFAULT_ADVANCED_MODEL);
+      return JSON.stringify(feedback);
+    },
+  })(request());
+});
+test('browser-supplied model values cannot change server routing', async () => {
+  await handler({
+    generate: async (_, options) => {
+      assert.equal(options.model, DEFAULT_FAST_MODEL);
+      return JSON.stringify(resultFor(A.SENTENCE_HINT));
+    },
+  })(request({ ...body(A.SENTENCE_HINT), model: 'expensive-untrusted-model' }));
 });
 test('malformed, missing and oversized structured fields rejected', async () => {
   for (const raw of ['not json', '{}', JSON.stringify({ ...feedback, summary: '文'.repeat(241) })])
@@ -175,14 +226,18 @@ test('operational timing logs are structured and exclude writing and secrets', a
   );
   assert.deepEqual(info[0], [
     'AI teacher request started',
-    { action: A.SENTENCE_CHECK, model: DEFAULT_MODEL, thinkingMode: 'off' },
+    {
+      action: A.SENTENCE_CHECK,
+      routeClass: 'fast',
+      model: DEFAULT_FAST_MODEL,
+    },
   ]);
   assert.deepEqual(info[1], [
     'AI teacher request completed',
     {
       action: A.SENTENCE_CHECK,
-      model: DEFAULT_MODEL,
-      thinkingMode: 'off',
+      routeClass: 'fast',
+      model: DEFAULT_FAST_MODEL,
       durationMs: 17,
       status: 'success',
     },
@@ -191,8 +246,8 @@ test('operational timing logs are structured and exclude writing and secrets', a
     'AI teacher request failed',
     {
       action: A.SENTENCE_CHECK,
-      model: DEFAULT_MODEL,
-      thinkingMode: 'off',
+      routeClass: 'fast',
+      model: DEFAULT_FAST_MODEL,
       durationMs: 17,
       status: 'unavailable',
     },
@@ -200,6 +255,34 @@ test('operational timing logs are structured and exclude writing and secrets', a
   const logged = JSON.stringify([...info, ...warn]);
   for (const privateText of [env.GEMINI_API_KEY, input.context.studentSentence, systemInstruction])
     assert.ok(!logged.includes(privateText));
+});
+test('upstream diagnostics classify typed SDK metadata without logging content', async () => {
+  const upstream = {
+    statusCode: 403,
+    error: { status: 'PERMISSION_DENIED', message: `${env.GEMINI_API_KEY} private writing` },
+  };
+  assert.deepEqual(upstreamDiagnostic(upstream), {
+    upstreamStatus: 403,
+    upstreamCode: 'PERMISSION_DENIED',
+  });
+  const logs = [];
+  const response = await handler({
+    logger: { info() {}, warn: (...args) => logs.push(args) },
+    generate: async () => {
+      throw upstream;
+    },
+  })(request(inputFor(A.SENTENCE_CHECK)));
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, 'AI_UNAVAILABLE');
+  assert.equal(logs[0][1].status, 'permission_denied');
+  assert.equal(logs[0][1].upstreamStatus, 403);
+  assert.equal(logs[0][1].upstreamCode, 'PERMISSION_DENIED');
+  assert.ok(!JSON.stringify(logs).includes(env.GEMINI_API_KEY));
+  assert.ok(!JSON.stringify(logs).includes('private writing'));
+  assert.deepEqual(
+    [400, 401, 403, 404, 429, 500].map(upstreamStatusCategory),
+    ['invalid_request', 'authentication', 'permission_denied', 'not_found', 'rate_limited', 'unavailable'],
+  );
 });
 test('secret in otherwise valid output is never returned', async () =>
   failure(request(), 'AI_INVALID_RESPONSE', 502, {
@@ -278,12 +361,14 @@ test('installed SDK sends correct Interactions schema, server prompt and statele
     const request = url instanceof Request ? url : new Request(url, options);
     const sent = await request.json();
     assert.match(request.url, /\/interactions/);
-    assert.equal(sent.model, DEFAULT_MODEL);
+    assert.equal(sent.model, DEFAULT_FAST_MODEL);
     assert.equal(sent.store, false);
     assert.deepEqual(
       sent.generation_config,
-      buildGenerationConfig({ model: DEFAULT_MODEL, action: A.SENTENCE_HINT }),
+      buildGenerationConfig({ action: A.SENTENCE_HINT }),
     );
+    assert.ok(!Object.hasOwn(sent.generation_config, 'thinking_config'));
+    assert.ok(!Object.hasOwn(sent.generation_config, 'thinking_level'));
     assert.deepEqual(sent.response_format.schema, actions[A.SENTENCE_HINT].schema);
     assert.match(sent.system_instruction, /NOT followed/);
     assert.ok(sent.system_instruction.endsWith(actions[A.SENTENCE_HINT].instruction));
@@ -297,31 +382,18 @@ test('installed SDK sends correct Interactions schema, server prompt and statele
   });
   const raw = await generateTeachingResult(
     { ...body(A.SENTENCE_HINT), vocabularyCandidates: [] },
-    { apiKey: env.GEMINI_API_KEY, model: DEFAULT_MODEL, signal: new AbortController().signal },
+    { apiKey: env.GEMINI_API_KEY, model: DEFAULT_FAST_MODEL, signal: new AbortController().signal },
   );
   assert.deepEqual(JSON.parse(raw), fixtures[A.SENTENCE_HINT]);
   assert.equal(count, 1);
 });
-test('generation config keeps Flash Lite fast, limits each action, and leaves unknown overrides optional', () => {
+test('generation config keeps compact per-action caps and omits explicit thinking settings', () => {
   for (const action of Object.values(A))
     assert.equal(
-      buildGenerationConfig({ model: DEFAULT_MODEL, action }).max_output_tokens,
+      buildGenerationConfig({ action }).max_output_tokens,
       OUTPUT_TOKEN_CAPS[action],
     );
-  assert.deepEqual(buildGenerationConfig({ model: DEFAULT_MODEL, action: A.SENTENCE_HINT }), {
-    max_output_tokens: 650,
-    thinking_config: { thinking_budget: 0 },
-  });
-  assert.deepEqual(buildGenerationConfig({ model: 'gemini-3.8-flash', action: A.SENTENCE_HINT }), {
-    max_output_tokens: 650,
-    thinking_level: 'low',
-  });
-  assert.deepEqual(
-    buildGenerationConfig({ model: 'compatible-override', action: A.SENTENCE_HINT }),
-    {
-      max_output_tokens: 650,
-    },
-  );
+  assert.deepEqual(buildGenerationConfig({ action: A.SENTENCE_HINT }), { max_output_tokens: 320 });
 });
 test('SDK safety refusal yields neutral controlled error', async (t) => {
   t.mock.method(globalThis, 'fetch', async () =>

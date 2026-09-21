@@ -12,10 +12,9 @@ import {
   validateTeachingResult,
 } from './ai-contract.js';
 import {
-  DEFAULT_MODEL,
   TIMEOUT_MS,
   generateTeachingResult,
-  thinkingModeForModel,
+  selectGeminiModel,
 } from './gemini.js';
 import { clientRateLimit, createTutorLimiter } from './ai-rate-limit.js';
 
@@ -74,6 +73,37 @@ const trustedWord = ({
   exampleSentence,
 }) => ({ id, word, pinyin, definitionChinese, generatedSynonyms, synonyms, exampleSentence });
 
+const safeUpstreamCode = (value) =>
+  typeof value === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(value) ? value : undefined;
+
+// The SDK exposes these fields on its typed error objects. Read only bounded,
+// structured metadata and never parse or log an upstream body or message.
+export function upstreamDiagnostic(error) {
+  if (!error || typeof error !== 'object') return {};
+  const upstreamStatus = [error.statusCode, error.status].find(
+    (value) => Number.isInteger(value) && value >= 400 && value <= 599,
+  );
+  const upstreamCode = [
+    error.error?.status,
+    error.data$?.error?.status,
+    error.error?.error?.status,
+    error.code,
+  ]
+    .map(safeUpstreamCode)
+    .find(Boolean);
+  return { upstreamStatus, upstreamCode };
+}
+
+export const upstreamStatusCategory = (status) => {
+  if (status === 400) return 'invalid_request';
+  if (status === 401) return 'authentication';
+  if (status === 403) return 'permission_denied';
+  if (status === 404) return 'not_found';
+  if (status === 429) return 'rate_limited';
+  if (status >= 500) return 'unavailable';
+  return undefined;
+};
+
 export function createTeacherHandler({
   generate = generateTeachingResult,
   env = process.env,
@@ -90,7 +120,7 @@ export function createTeacherHandler({
         405,
         { Allow: 'POST' },
       );
-    let timer, release, cancelRequest, action, model, startedAt;
+    let timer, release, cancelRequest, action, model, routeClass, startedAt;
     const controller = new AbortController();
     try {
       const origin = request.headers.get('origin');
@@ -102,8 +132,8 @@ export function createTeacherHandler({
       if (data) return reply({ ok: true, action: input.action, data });
       const apiKey = env.GEMINI_API_KEY?.trim();
       if (!apiKey) throw new TeacherError('AI_NOT_CONFIGURED', 503);
-      model = env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
       action = input.action;
+      ({ model, routeClass } = selectGeminiModel(action, env));
       const candidates =
         input.action === A.VOCABULARY_HELP ? input.context.availableVocabularyIds || [] : [];
       const store = candidates.length ? await vocabulary() : null;
@@ -123,8 +153,8 @@ export function createTeacherHandler({
         startedAt = now();
         logger.info?.('AI teacher request started', {
           action,
+          routeClass,
           model,
-          thinkingMode: thinkingModeForModel(model),
         });
         release = limiter.acquire(request, env.VERCEL === '1');
         const cancellation = new Promise((_, reject) => {
@@ -173,8 +203,8 @@ export function createTeacherHandler({
       if (startedAt !== undefined)
         logger.info?.('AI teacher request completed', {
           action,
+          routeClass,
           model,
-          thinkingMode: thinkingModeForModel(model),
           durationMs: Math.max(0, now() - startedAt),
           status: 'success',
         });
@@ -182,7 +212,9 @@ export function createTeacherHandler({
     } catch (error) {
       let code = error instanceof TeacherError ? error.code : 'AI_UNAVAILABLE';
       let status = error instanceof TeacherError ? error.status : 503;
-      if (Number(error?.status ?? error?.statusCode) === 429) {
+      const { upstreamStatus, upstreamCode } =
+        error instanceof TeacherError ? {} : upstreamDiagnostic(error);
+      if (upstreamStatus === 429) {
         code = 'AI_RATE_LIMIT';
         status = 429;
       }
@@ -196,6 +228,7 @@ export function createTeacherHandler({
       }
       if (startedAt !== undefined) {
         const logStatus =
+          upstreamStatusCategory(upstreamStatus) ||
           {
             AI_TIMEOUT: 'timeout',
             AI_UNAVAILABLE: 'unavailable',
@@ -203,13 +236,16 @@ export function createTeacherHandler({
             AI_REFUSAL: 'safety',
             AI_INVALID_RESPONSE: 'malformed_response',
             AI_CANCELLED: 'cancelled',
-          }[code] || 'unavailable';
+          }[code] ||
+          'unavailable';
         logger.warn?.('AI teacher request failed', {
           action,
+          routeClass,
           model,
-          thinkingMode: thinkingModeForModel(model),
           durationMs: Math.max(0, now() - startedAt),
           status: logStatus,
+          ...(upstreamStatus ? { upstreamStatus } : {}),
+          ...(upstreamCode ? { upstreamCode } : {}),
         });
       }
       const retryAfterSeconds =
