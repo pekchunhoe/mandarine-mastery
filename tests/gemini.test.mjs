@@ -387,7 +387,7 @@ test('installed SDK sends correct Interactions schema, server prompt and statele
   assert.deepEqual(JSON.parse(raw), fixtures[A.SENTENCE_HINT]);
   assert.equal(count, 1);
 });
-test('generation config keeps compact caps, with low thinking only for advanced reviews', () => {
+test('generation config keeps compact caps, with minimal thinking only for advanced reviews', () => {
   for (const action of Object.values(A))
     assert.equal(
       buildGenerationConfig({ action }).max_output_tokens,
@@ -397,8 +397,97 @@ test('generation config keeps compact caps, with low thinking only for advanced 
   for (const action of [A.PARAGRAPH_REVIEW, A.ESSAY_REVIEW])
     assert.deepEqual(buildGenerationConfig({ action }), {
       max_output_tokens: OUTPUT_TOKEN_CAPS[action],
-      thinking_level: 'low',
+      thinking_level: 'minimal',
     });
+});
+test('advanced SDK completion logs only bounded interaction usage metadata', async (t) => {
+  const logs = [];
+  t.mock.method(globalThis, 'fetch', async () =>
+    Response.json({
+      id: 'mock',
+      status: 'completed',
+      output_text: JSON.stringify(fixtures[A.PARAGRAPH_REVIEW]),
+      usage: {
+        total_input_tokens: 120,
+        total_thought_tokens: 45,
+        total_output_tokens: 310,
+        total_tokens: 475,
+      },
+      steps: [],
+    }),
+  );
+  const input = body(A.PARAGRAPH_REVIEW);
+  const response = await handler({
+    logger: { info: (...args) => logs.push(args), warn() {} },
+    generate: generateTeachingResult,
+  })(request(input));
+  assert.equal(response.status, 200);
+  assert.deepEqual(logs[1][1], {
+    action: A.PARAGRAPH_REVIEW,
+    routeClass: 'advanced',
+    model: DEFAULT_ADVANCED_MODEL,
+    durationMs: logs[1][1].durationMs,
+    status: 'success',
+    interactionStatus: 'completed',
+    total_input_tokens: 120,
+    total_thought_tokens: 45,
+    total_output_tokens: 310,
+    total_tokens: 475,
+  });
+  assert.equal(typeof logs[1][1].durationMs, 'number');
+  const logged = JSON.stringify(logs);
+  for (const privateText of [input.context.currentParagraph, env.GEMINI_API_KEY])
+    assert.ok(!logged.includes(privateText));
+});
+test('incomplete advanced SDK response is classified and logged without raw output', async (t) => {
+  const warnings = [];
+  t.mock.method(globalThis, 'fetch', async () =>
+    Response.json({
+      id: 'mock',
+      status: 'incomplete',
+      output_text: '{"private":"truncated provider output"',
+      usage: { total_input_tokens: 120, total_thought_tokens: 900, total_output_tokens: 1200 },
+      steps: [],
+    }),
+  );
+  const input = body(A.PARAGRAPH_REVIEW);
+  const response = await handler({
+    logger: { info() {}, warn: (...args) => warnings.push(args) },
+    generate: generateTeachingResult,
+  })(request(input));
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).error.code, 'AI_INVALID_RESPONSE');
+  assert.equal(warnings[0][1].status, 'incomplete_response');
+  assert.equal(warnings[0][1].interactionStatus, 'incomplete');
+  assert.equal(warnings[0][1].total_thought_tokens, 900);
+  assert.equal(warnings[0][1].total_output_tokens, 1200);
+  const logged = JSON.stringify(warnings);
+  for (const privateText of [input.context.currentParagraph, env.GEMINI_API_KEY, 'truncated provider output'])
+    assert.ok(!logged.includes(privateText));
+});
+test('malformed advanced SDK JSON keeps validation and raw-output protection', async (t) => {
+  const warnings = [];
+  t.mock.method(globalThis, 'fetch', async () =>
+    Response.json({
+      id: 'mock',
+      status: 'completed',
+      output_text: '{"private":"malformed provider output"',
+      usage: { total_output_tokens: 1200 },
+      steps: [],
+    }),
+  );
+  const input = body(A.PARAGRAPH_REVIEW);
+  const response = await handler({
+    logger: { info() {}, warn: (...args) => warnings.push(args) },
+    generate: generateTeachingResult,
+  })(request(input));
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).error.code, 'AI_INVALID_RESPONSE');
+  assert.equal(warnings[0][1].status, 'malformed_response');
+  assert.equal(warnings[0][1].total_output_tokens, 1200);
+  const logged = JSON.stringify(warnings);
+  for (const privateText of [input.context.currentParagraph, 'malformed provider output'])
+    assert.ok(!logged.includes(privateText));
 });
 test('SDK safety refusal yields neutral controlled error', async (t) => {
   t.mock.method(globalThis, 'fetch', async () =>

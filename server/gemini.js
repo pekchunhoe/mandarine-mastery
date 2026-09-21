@@ -23,8 +23,8 @@ export const OUTPUT_TOKEN_CAPS = {
   sentence_vivid: 500,
   vocabulary_help: 420,
   essay_next_step: 480,
-  paragraph_review: 700,
-  essay_review: 1100,
+  paragraph_review: 1200,
+  essay_review: 1800,
 };
 
 const configuredModel = (value, fallback) =>
@@ -48,17 +48,38 @@ export function selectGeminiModel(action, env = {}) {
   };
 }
 
-// Fast requests retain the Flash-Lite default; advanced reviews use low
+// Fast requests retain the Flash-Lite default; advanced reviews use minimal
 // reasoning to stay within the application's fixed response-time budget.
 export function buildGenerationConfig({ action }) {
   return {
     max_output_tokens: OUTPUT_TOKEN_CAPS[action],
-    ...(ADVANCED_ACTIONS.has(action) ? { thinking_level: 'low' } : {}),
+    ...(ADVANCED_ACTIONS.has(action) ? { thinking_level: 'minimal' } : {}),
   };
 }
 
+const safeTokenCount = (value) =>
+  Number.isSafeInteger(value) && value >= 0 && value <= 100_000_000 ? value : undefined;
+
+// These are the installed SDK Interaction response fields. Keep provider output
+// private while retaining bounded operational metadata for completed/incomplete calls.
+export function interactionDiagnostic({ status, usage } = {}) {
+  const interactionStatus =
+    typeof status === 'string' && /^[a-z_]{1,40}$/.test(status) ? status : undefined;
+  const diagnostic = { ...(interactionStatus ? { interactionStatus } : {}) };
+  for (const field of [
+    'total_input_tokens',
+    'total_thought_tokens',
+    'total_output_tokens',
+    'total_tokens',
+  ]) {
+    const value = safeTokenCount(usage?.[field]);
+    if (value !== undefined) diagnostic[field] = value;
+  }
+  return diagnostic;
+}
+
 // Isolated SDK adapter. No browser imports, conversation storage, tools or secrets in prompts.
-export async function generateTeachingResult(input, { apiKey, model, signal }) {
+export async function generateTeachingResult(input, { apiKey, model, signal, onDiagnostic }) {
   const ai = new GoogleGenAI({ apiKey });
   const result = await ai.interactions.create(
     {
@@ -79,8 +100,11 @@ export async function generateTeachingResult(input, { apiKey, model, signal }) {
     },
     { signal, timeout: TIMEOUT_MS, maxRetries: 0 },
   );
+  onDiagnostic?.(interactionDiagnostic(result));
   if (result.status === 'failed' || result.status === 'cancelled')
     throw new TeacherError('AI_REFUSAL', 422);
+  if (result.status === 'incomplete' || result.status === 'budget_exceeded')
+    throw new TeacherError('AI_INVALID_RESPONSE', 502);
   const text = result.output_text;
   if (!text) throw new TeacherError('AI_REFUSAL', 422);
   if (text.length > MAX_OUTPUT || result.status === 'incomplete')

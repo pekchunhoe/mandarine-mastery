@@ -45,8 +45,10 @@ test('installed SDK receives the server-selected model and request shape for eve
     assert.equal(request.model, advanced ? DEFAULT_ADVANCED_MODEL : DEFAULT_FAST_MODEL);
     assert.deepEqual(request.generation_config, {
       max_output_tokens: OUTPUT_TOKEN_CAPS[action],
-      ...(advanced ? { thinking_level: 'low' } : {}),
+      ...(advanced ? { thinking_level: 'minimal' } : {}),
     });
+    if (action === A.PARAGRAPH_REVIEW) assert.equal(request.generation_config.max_output_tokens, 1200);
+    if (action === A.ESSAY_REVIEW) assert.equal(request.generation_config.max_output_tokens, 1800);
     for (const field of advanced
       ? ['thinking_budget', 'thinking_config']
       : ['thinking_budget', 'thinking_config', 'thinking_level'])

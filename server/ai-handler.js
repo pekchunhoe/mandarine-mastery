@@ -120,7 +120,7 @@ export function createTeacherHandler({
         405,
         { Allow: 'POST' },
       );
-    let timer, release, cancelRequest, action, model, routeClass, startedAt;
+    let timer, release, cancelRequest, action, model, routeClass, startedAt, interactionDiagnostic;
     const controller = new AbortController();
     try {
       const origin = request.headers.get('origin');
@@ -173,7 +173,14 @@ export function createTeacherHandler({
               controller.abort();
             }, timeoutMs);
           }),
-          generate(input, { apiKey, model, signal: controller.signal }),
+          generate(input, {
+            apiKey,
+            model,
+            signal: controller.signal,
+            onDiagnostic: (diagnostic) => {
+              interactionDiagnostic = diagnostic;
+            },
+          }),
         ]);
         if (typeof raw !== 'string' || raw.length > MAX_OUTPUT)
           throw new TeacherError('AI_INVALID_RESPONSE', 502);
@@ -207,6 +214,7 @@ export function createTeacherHandler({
           model,
           durationMs: Math.max(0, now() - startedAt),
           status: 'success',
+          ...interactionDiagnostic,
         });
       return reply({ ok: true, action: input.action, data });
     } catch (error) {
@@ -228,7 +236,9 @@ export function createTeacherHandler({
       }
       if (startedAt !== undefined) {
         const logStatus =
-          upstreamStatusCategory(upstreamStatus) ||
+          ['incomplete', 'budget_exceeded'].includes(interactionDiagnostic?.interactionStatus)
+            ? 'incomplete_response'
+            : upstreamStatusCategory(upstreamStatus) ||
           {
             AI_TIMEOUT: 'timeout',
             AI_UNAVAILABLE: 'unavailable',
@@ -246,6 +256,7 @@ export function createTeacherHandler({
           status: logStatus,
           ...(upstreamStatus ? { upstreamStatus } : {}),
           ...(upstreamCode ? { upstreamCode } : {}),
+          ...interactionDiagnostic,
         });
       }
       const retryAfterSeconds =
