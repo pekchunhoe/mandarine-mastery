@@ -1,8 +1,8 @@
 import { GoogleGenAI } from '@google/genai';
 import { actions, systemInstruction, TeacherError, MAX_OUTPUT } from './ai-contract.js';
 
-export const DEFAULT_FAST_MODEL = 'gemini-2.5-flash-lite';
-export const DEFAULT_ADVANCED_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_FAST_MODEL = 'gemini-3.5-flash-lite';
+export const DEFAULT_ADVANCED_MODEL = 'gemini-3.6-flash';
 // Compatibility export for server integrations that previously imported it.
 export const DEFAULT_MODEL = DEFAULT_FAST_MODEL;
 export const FAST_ACTIONS = new Set([

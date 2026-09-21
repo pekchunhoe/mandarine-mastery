@@ -47,6 +47,6 @@ assert.ok(
 );
 assert.equal(
   (await readFile(new URL('../.env.example', import.meta.url), 'utf8')).trim().replaceAll('\r', ''),
-  'GEMINI_API_KEY=\nGEMINI_FAST_MODEL=gemini-2.5-flash-lite\nGEMINI_ADVANCED_MODEL=gemini-2.5-flash\nGEMINI_MODEL=\nAI_CLIENT_RPM=4',
+  'GEMINI_API_KEY=\nGEMINI_FAST_MODEL=gemini-3.5-flash-lite\nGEMINI_ADVANCED_MODEL=gemini-3.6-flash\nGEMINI_MODEL=\nAI_CLIENT_RPM=4',
 );
 console.log(`PASS: ${count} client assets scanned; no Gemini credentials, SDK or server modules.`);

@@ -12,13 +12,13 @@ Use Node.js 22 or newer (the project already uses JSON import attributes). Insta
 
 ```dotenv
 GEMINI_API_KEY=your-server-key
-GEMINI_FAST_MODEL=gemini-2.5-flash-lite
-GEMINI_ADVANCED_MODEL=gemini-2.5-flash
+GEMINI_FAST_MODEL=gemini-3.5-flash-lite
+GEMINI_ADVANCED_MODEL=gemini-3.6-flash
 GEMINI_MODEL=
 AI_CLIENT_RPM=4
 ```
 
-Routine actions use `GEMINI_FAST_MODEL` (`gemini-2.5-flash-lite` by default); paragraph and essay review use `GEMINI_ADVANCED_MODEL` (`gemini-2.5-flash` by default). `GEMINI_MODEL` is a temporary legacy fallback for the fast route only, so it cannot override advanced reviews. Migrate production by setting both new variables, then remove or leave `GEMINI_MODEL` blank. `AI_CLIENT_RPM` is optional; it accepts whole values from 1 to 40 and otherwise safely defaults to 4. `npm run dev` serves both the app and `/api/gemini` at `http://localhost:4173`. Restart after changing environment files. Shell environment variables take precedence over `.env.local`, then `.env`. Never use `VITE_*`, `NEXT_PUBLIC_*`, browser storage or a committed environment file for the key.
+Routine actions use `GEMINI_FAST_MODEL` (`gemini-3.5-flash-lite` by default); paragraph and essay review use `GEMINI_ADVANCED_MODEL` (`gemini-3.6-flash` by default). `GEMINI_MODEL` is a temporary legacy fallback for the fast route only, so it cannot override advanced reviews. Migrate production by setting both new variables, then remove or leave `GEMINI_MODEL` blank. `AI_CLIENT_RPM` is optional; it accepts whole values from 1 to 40 and otherwise safely defaults to 4. `npm run dev` serves both the app and `/api/gemini` at `http://localhost:4173`. Restart after changing environment files. Shell environment variables take precedence over `.env.local`, then `.env`. Never use `VITE_*`, `NEXT_PUBLIC_*`, browser storage or a committed environment file for the key.
 
 For the existing GitHub → Vercel workflow, keep `npm run build` and output directory `dist`. The ESM function is `api/gemini.js`; server modules are excluded from static build output. In **Vercel Project → Settings → Environment Variables**, add `GEMINI_API_KEY`, `GEMINI_FAST_MODEL`, and `GEMINI_ADVANCED_MODEL` to the required environments. Remove or blank the legacy `GEMINI_MODEL` after migration. Mark production/preview secrets sensitive where supported. Redeploy after adding or changing variables. This implementation does not push or deploy automatically.
 
