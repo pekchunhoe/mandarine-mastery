@@ -225,7 +225,13 @@ export function guidedEssayWriting(root, ctx) {
       draft.helpLevel >= 5
         ? `<section class="hint-card example-hint"><h4>范句（参考后请用自己的内容写）</h4><p class="example-hint-text">${e(referenceParagraph)}</p></section>`
         : '';
-    root.innerHTML = `<h2>要点导写</h2><p class="question-instruction">参考要点，用自己的内容来写。完整范文会在你尝试后才显示。</p>${TopicPicker({ topics, catalog: allModelTopics(), selectedId: topic.id, filters })}<section class="guided-topic panel"><div><h3>《${e(topic.title)}》</h3><div class="row wrap">${topicInfo(topic, content)}</div></div>${contents.length > 1 ? `<label>难度/版本<select id="guided-content">${contents.map((entry) => `<option value="${e(entry.contentId)}" ${entry.contentId === contentId ? 'selected' : ''}>${e(entry.contentTitle || entry.version)} · ${e(entry.level)}</option>`).join('')}</select></label>` : ''}<p>${e(topic.writingGuidance.join('、') || '先想清楚，再按顺序写。')}</p></section><section class="panel soft guided-think"><h3>第一步：想一想</h3><ul>${training.writingQuestions.map((question) => `<li>${e(question)}</li>`).join('')}</ul></section><div class="guided-layout"><section class="panel guided-editor"><div class="guided-steps">${training.paragraphs.map((paragraph, index) => `<button data-guided-paragraph="${index}" class="${index === activeParagraph ? 'active' : ''}" aria-current="${index === activeParagraph ? 'step' : 'false'}">${index + 1}. ${e(paragraph.label)}</button>`).join('')}</div><h3>第${activeParagraph + 1}段：${e(item.label)}</h3><p class="muted">${e(item.role)}</p><div class="row between"><label for="guided-line">我的这一段</label><button type="button" class="btn" id="guided-vocabulary" aria-haspopup="dialog" aria-controls="modal">词语库</button></div><textarea id="guided-line" class="guided-line" placeholder="用自己的经历来写，不必照抄范文。">${e(draft.lines[activeParagraph])}</textarea><div class="row between"><span id="guided-line-count" class="small muted">这一段 ${countCompositionCharacters(draft.lines[activeParagraph])} 字</span><button id="guided-next" class="btn primary">${activeParagraph === training.paragraphCount - 1 ? '完成作文 →' : '完成这一段 →'}</button></div></section><aside class="guided-help"><section class="panel soft"><h3>给我一点提示</h3><p class="small muted">第 ${draft.helpLevel} / 5 层提示。你可以按自己的需要停下来。</p><div class="action-bar"><button class="btn" id="guided-more-help" ${draft.helpLevel >= 5 ? 'disabled' : ''}>${draft.helpLevel === 1 ? '看关键词' : draft.helpLevel === 2 ? '看写作要点' : draft.helpLevel === 3 ? '看句子提示' : '看范句'}</button></div>${keywordPanel}${pointPanel}${cuePanel}${examplePanel}</section><section class="panel sentence-starters"><h3>常用句子开头</h3>${training.sentenceStarters.map((starter) => `<button class="sentence-starter" data-starter="${e(starter.replace('……', ''))}">${e(starter)}</button>`).join('')}</section></aside></div><section class="panel complete-essay"><div class="row between"><div><h3>我的作文</h3><p class="small muted">当前字数：<strong id="guided-total-count">${count}</strong> · ${writingLengthGuidance(count)}</p></div><div class="row guided-essay-actions"><button type="button" class="btn" id="guided-copy" aria-label="复制全文" ${draft.text ? '' : 'disabled'}>复制全文</button><button type="button" class="btn" id="guided-reset">重新开始</button></div></div>${aiToolbar()}<div class="writing-preview" id="guided-preview">${e(draft.text || '完成每一段后，这里会合成你的作文。')}</div></section><section class="panel self-assess"><h3>作文小检查</h3>${['我有写清楚人物或事情。', '我有分段。', '事情有开始、经过和结果。', '我用了完整句子。', '我写了自己的感受。', '我检查了错别字。', '我的结尾完整。'].map((label, index) => `<div class="check-row"><input id="guided-check-${index}" data-guided-check="${index}" type="checkbox" ${draft.checklist[index] ? 'checked' : ''}><label for="guided-check-${index}">${label}</label></div>`).join('')}</section><section class="model-reveal panel ${draft.reveal ? 'revealed' : ''}"><div class="row between"><div><h3>参考范文</h3><p class="small muted">先看自己的作文，再比较开头、段落顺序和表达方式。</p></div><button class="btn ${draft.reveal ? '' : 'primary'}" id="guided-reveal">${draft.reveal ? '收起范文' : '完成后查看范文'}</button></div>${draft.reveal ? `<div class="comparison-grid"><article><h4>我的作文</h4><div class="writing-preview">${e(draft.text || '还没有写内容。')}</div></article><article><h4>参考范文</h4>${training.paragraphs.map(paragraphHTML).join('')}</article></div>` : ''}</section>`;
+    const paragraphActions = [
+      A.SENTENCE_HINT,
+      A.VOCABULARY_HELP,
+      A.ESSAY_NEXT_STEP,
+      A.PARAGRAPH_REVIEW,
+    ];
+    root.innerHTML = `<h2>要点导写</h2><p class="question-instruction">参考要点，用自己的内容来写。完整范文会在你尝试后才显示。</p>${TopicPicker({ topics, catalog: allModelTopics(), selectedId: topic.id, filters })}<section class="guided-topic panel"><div><h3>《${e(topic.title)}》</h3><div class="row wrap">${topicInfo(topic, content)}</div></div>${contents.length > 1 ? `<label>难度/版本<select id="guided-content">${contents.map((entry) => `<option value="${e(entry.contentId)}" ${entry.contentId === contentId ? 'selected' : ''}>${e(entry.contentTitle || entry.version)} · ${e(entry.level)}</option>`).join('')}</select></label>` : ''}<p>${e(topic.writingGuidance.join('、') || '先想清楚，再按顺序写。')}</p></section><section class="panel soft guided-think"><h3>第一步：想一想</h3><ul>${training.writingQuestions.map((question) => `<li>${e(question)}</li>`).join('')}</ul></section><div class="guided-layout"><section class="panel guided-editor"><div class="guided-steps">${training.paragraphs.map((paragraph, index) => `<button data-guided-paragraph="${index}" class="${index === activeParagraph ? 'active' : ''}" aria-current="${index === activeParagraph ? 'step' : 'false'}">${index + 1}. ${e(paragraph.label)}</button>`).join('')}</div><h3>第${activeParagraph + 1}段：${e(item.label)}</h3><p class="muted">${e(item.role)}</p><div class="row between"><label for="guided-line">我的这一段</label><button type="button" class="btn" id="guided-vocabulary" aria-haspopup="dialog" aria-controls="modal">词语库</button></div><textarea id="guided-line" class="guided-line" placeholder="用自己的经历来写，不必照抄范文。">${e(draft.lines[activeParagraph])}</textarea><div class="row between"><span id="guided-line-count" class="small muted">这一段 ${countCompositionCharacters(draft.lines[activeParagraph])} 字</span><button id="guided-next" class="btn primary">${activeParagraph === training.paragraphCount - 1 ? '完成作文 →' : '完成这一段 →'}</button></div>${aiToolbar(TUTOR_ACTIVITY.ESSAY, paragraphActions)}</section><aside class="guided-help"><section class="panel soft"><h3>给我一点提示</h3><p class="small muted">第 ${draft.helpLevel} / 5 层提示。你可以按自己的需要停下来。</p><div class="action-bar"><button class="btn" id="guided-more-help" ${draft.helpLevel >= 5 ? 'disabled' : ''}>${draft.helpLevel === 1 ? '看关键词' : draft.helpLevel === 2 ? '看写作要点' : draft.helpLevel === 3 ? '看句子提示' : '看范句'}</button></div>${keywordPanel}${pointPanel}${cuePanel}${examplePanel}</section><section class="panel sentence-starters"><h3>常用句子开头</h3>${training.sentenceStarters.map((starter) => `<button class="sentence-starter" data-starter="${e(starter.replace('……', ''))}">${e(starter)}</button>`).join('')}</section></aside></div><section class="panel complete-essay"><div class="row between"><div><h3>我的作文</h3><p class="small muted">当前字数：<strong id="guided-total-count">${count}</strong> · ${writingLengthGuidance(count)}</p></div><div class="row guided-essay-actions"><button type="button" class="btn" id="guided-copy" aria-label="复制全文" ${draft.text ? '' : 'disabled'}>复制全文</button><button type="button" class="btn" id="guided-reset">重新开始</button></div></div>${aiToolbar(TUTOR_ACTIVITY.ESSAY, [A.ESSAY_REVIEW])}<div class="writing-preview" id="guided-preview">${e(draft.text || '完成每一段后，这里会合成你的作文。')}</div></section><section class="panel self-assess"><h3>作文小检查</h3>${['我有写清楚人物或事情。', '我有分段。', '事情有开始、经过和结果。', '我用了完整句子。', '我写了自己的感受。', '我检查了错别字。', '我的结尾完整。'].map((label, index) => `<div class="check-row"><input id="guided-check-${index}" data-guided-check="${index}" type="checkbox" ${draft.checklist[index] ? 'checked' : ''}><label for="guided-check-${index}">${label}</label></div>`).join('')}</section><section class="model-reveal panel ${draft.reveal ? 'revealed' : ''}"><div class="row between"><div><h3>参考范文</h3><p class="small muted">先看自己的作文，再比较开头、段落顺序和表达方式。</p></div><button class="btn ${draft.reveal ? '' : 'primary'}" id="guided-reveal">${draft.reveal ? '收起范文' : '完成后查看范文'}</button></div>${draft.reveal ? `<div class="comparison-grid"><article><h4>我的作文</h4><div class="writing-preview">${e(draft.text || '还没有写内容。')}</div></article><article><h4>参考范文</h4>${training.paragraphs.map(paragraphHTML).join('')}</article></div>` : ''}</section>`;
   };
   enhanceSpeechUI(root);
   const saveLine = (immediate = true) => {
@@ -248,24 +254,47 @@ export function guidedEssayWriting(root, ctx) {
     getRequest(action) {
       const editor = $('#guided-line', root);
       // Read the current editor without saving, redrawing or changing its selection.
-      const lines = draft.lines.map((line, index) => index === activeParagraph && editor ? editor.value : line);
-      const text = lines.filter(Boolean).join('\n\n');
-      const content = getActiveEssayContentsByEssayId(topic.id).find(item => item.contentId === contentId);
+      const lines = draft.lines.map((line, index) =>
+        index === activeParagraph && editor ? editor.value : line,
+      );
+      const content = getActiveEssayContentsByEssayId(topic.id).find(
+        (item) => item.contentId === contentId,
+      );
       const point = deriveEssayTraining(content, topic).paragraphs[activeParagraph];
       const writingPoint = [point.label, point.role, ...point.keyPoints].join('、');
-      const target = action === A.PARAGRAPH_REVIEW ? paragraphTarget(editor, lines[activeParagraph]) : { text: lines[activeParagraph] };
+      const target =
+        action === A.PARAGRAPH_REVIEW
+          ? paragraphTarget(editor, lines[activeParagraph])
+          : { text: lines[activeParagraph], label: '当前写作段落' };
+      const paragraphContext = {
+        essayTitle: topic.title,
+        keyPoints: [point.role, ...point.keyPoints],
+        currentStep: activeParagraph + 1,
+        currentParagraph: target.text,
+        // A single completed neighbour is enough for an optional transition check.
+        previousParagraphs: lines.slice(Math.max(0, activeParagraph - 1), activeParagraph),
+      };
+      if (action === A.ESSAY_REVIEW)
+        return {
+          activity: TUTOR_ACTIVITY.ESSAY,
+          context: {
+            essayTitle: topic.title,
+            keyPoints: topic.writingGuidance,
+            studentEssay: lines.filter(Boolean).join('\n\n'),
+          },
+        };
+      const context = {
+        ...paragraphContext,
+        // The candidate ranking is deliberately scoped to this writing point and paragraph.
+        availableVocabularyIds:
+          action === A.VOCABULARY_HELP
+            ? teachingVocabularyCandidates(topic, state.settings.grade, writingPoint, target.text)
+            : undefined,
+      };
       return {
         activity: TUTOR_ACTIVITY.ESSAY,
         scopeLabel: target.label,
-        context: {
-          essayTitle: topic.title,
-          keyPoints: action === A.ESSAY_REVIEW ? topic.writingGuidance : [point.role, ...point.keyPoints],
-          currentStep: activeParagraph + 1,
-          currentParagraph: target.text,
-          previousParagraphs: action === A.PARAGRAPH_REVIEW ? lines.slice(Math.max(0, activeParagraph - 1), activeParagraph) : lines.slice(0, activeParagraph),
-          studentEssay: text,
-          availableVocabularyIds: action === A.VOCABULARY_HELP ? teachingVocabularyCandidates(topic, state.settings.grade, writingPoint, text) : [],
-        },
+        context,
       };
     },
   });

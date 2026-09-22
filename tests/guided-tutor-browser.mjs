@@ -194,7 +194,7 @@ test('sentence autosave/custom situation/copy/Back/Forward/refresh survive tutor
   assert.equal(await page.locator('#sentence-context').inputValue(), '你自己想到的情境');
   assert.equal(await page.locator('#custom-sentence-context').inputValue(), '运动会');
 });
-test('three-paragraph essay: all five actions, previous context, full review, copy and reset', async (t) => {
+test('three-paragraph essay: paragraph tools stay beside paragraph 2 and send only its context', async (t) => {
   const page = await fixture(t, B.ESSAY);
   await page.locator('[data-training-filter="grade"]').selectOption('');
   const topic = await page
@@ -215,31 +215,59 @@ test('three-paragraph essay: all five actions, previous context, full review, co
       ),
     paragraphs.join('\n\n'),
   );
+  await page.locator('[data-guided-paragraph="1"]').click();
+  const paragraphActions = [
+    A.SENTENCE_HINT,
+    A.VOCABULARY_HELP,
+    A.ESSAY_NEXT_STEP,
+    A.PARAGRAPH_REVIEW,
+  ];
+  assert.deepEqual(
+    await page
+      .locator('.guided-editor [data-ai-action]')
+      .evaluateAll((buttons) => buttons.map((button) => button.dataset.aiAction)),
+    paragraphActions,
+  );
+  assert.deepEqual(
+    await page
+      .locator('.complete-essay [data-ai-action]')
+      .evaluateAll((buttons) => buttons.map((button) => button.dataset.aiAction)),
+    [A.ESSAY_REVIEW],
+  );
   const sent = await mockTutor(page),
     before = await essayState(page);
-  for (const action of activityTutorActions[B.ESSAY]) {
+  for (const action of paragraphActions) {
     await clickAI(page, action);
     await done(page);
     const input = sent.at(-1);
     assert.equal(input.context.essayTitle, '一次难忘的经历');
     assert.ok(input.context.keyPoints.length);
+    assert.equal(input.context.currentParagraph, paragraphs[1]);
+    assert.ok(!Object.hasOwn(input.context, 'studentEssay'));
+    assert.ok(!JSON.stringify(input.context).includes(paragraphs[2]));
+    assert.ok(!JSON.stringify(input.context).includes(paragraphs.join('\n\n')));
+    if ([A.SENTENCE_HINT, A.VOCABULARY_HELP].includes(action))
+      assert.ok(!Object.hasOwn(input.context, 'previousParagraphs'));
+    if (action !== A.VOCABULARY_HELP) assert.equal(input.context.currentStep, 2);
     if (action === A.ESSAY_NEXT_STEP) {
-      assert.deepEqual(input.context.previousParagraphs, paragraphs.slice(0, 2));
-      assert.equal(input.context.currentParagraph, paragraphs[2]);
+      assert.deepEqual(input.context.previousParagraphs, [paragraphs[0]]);
       assert.match(await page.locator('.ai-result').textContent(), /比赛的开始和经过/);
     }
     if (action === A.PARAGRAPH_REVIEW) {
-      assert.deepEqual(input.context.previousParagraphs, [paragraphs[1]]);
-      assert.equal(input.context.currentParagraph, paragraphs[2]);
-    }
-    if (action === A.ESSAY_REVIEW) {
-      assert.equal(input.context.studentEssay, paragraphs.join('\n\n'));
-      for (const label of ['切题', '结构', '描写', '词语', '语言', '优先修改'])
-        assert.match(await page.locator('.ai-result').textContent(), new RegExp(label));
+      assert.deepEqual(input.context.previousParagraphs, [paragraphs[0]]);
     }
     await close(page);
     assert.deepEqual(await essayState(page), before);
   }
+  await clickAI(page, A.ESSAY_REVIEW);
+  await done(page);
+  const essayReview = sent.at(-1);
+  assert.equal(essayReview.context.studentEssay, paragraphs.join('\n\n'));
+  assert.ok(!Object.hasOwn(essayReview.context, 'currentParagraph'));
+  for (const label of ['切题', '结构', '描写', '词语', '语言', '优先修改'])
+    assert.match(await page.locator('.ai-result').textContent(), new RegExp(label));
+  await close(page);
+  assert.deepEqual(await essayState(page), before);
   await page.evaluate(() => {
     navigator.clipboard.writeText = async (text) => {
       window.copiedEssay = text;
@@ -258,42 +286,66 @@ test('three-paragraph essay: all five actions, previous context, full review, co
 });
 test('block-building mode retains selections and tutor controls after redraw', async (t) => {
   const page = await fixture(t);
-  const record = records.find(item => builders[item.word]);
+  const record = records.find((item) => builders[item.word]);
   await page.goto(base + '#activity/builder?word=' + encodeURIComponent(record.id));
   await page.locator('[data-part]').first().waitFor();
-  for (const key of ['when', 'who', 'event', 'action']) await page.locator(`[data-part="${key}:0"]`).click();
+  for (const key of ['when', 'who', 'event', 'action'])
+    await page.locator(`[data-part="${key}:0"]`).click();
   const text = await page.locator('.sentence-display').textContent();
   const sent = await mockTutor(page);
-  await clickAI(page, A.SENTENCE_CHECK); await done(page); await close(page);
+  await clickAI(page, A.SENTENCE_CHECK);
+  await done(page);
+  await close(page);
   assert.equal(sent[0].context.studentSentence, text);
   assert.equal(await page.locator('.sentence-display').textContent(), text);
   assert.equal(await page.locator('[data-part][aria-pressed="true"]').count(), 4);
   await page.locator('[data-part="when:1"]').click();
   assert.equal(await page.locator('[data-ai-action]').count(), 5);
-  await clickAI(page, A.SENTENCE_HINT); await done(page); await close(page);
-  assert.equal(sent[1].context.studentSentence, await page.locator('.sentence-display').textContent());
+  await clickAI(page, A.SENTENCE_HINT);
+  await done(page);
+  await close(page);
+  assert.equal(
+    sent[1].context.studentSentence,
+    await page.locator('.sentence-display').textContent(),
+  );
 });
 test('sentence loading, malformed response, retry and offline failure preserve the draft', async (t) => {
-  const page = await fixture(t); await sentenceSetup(page);
-  let calls = 0, release;
-  await page.route('**/api/gemini', async route => {
+  const page = await fixture(t);
+  await sentenceSetup(page);
+  let calls = 0,
+    release;
+  await page.route('**/api/gemini', async (route) => {
     calls++;
     if (calls === 1) {
-      await new Promise(resolve => { release = resolve; });
+      await new Promise((resolve) => {
+        release = resolve;
+      });
       await route.fulfill({ json: { ok: true, action: A.SENTENCE_CHECK, data: {} } });
-    } else await route.fulfill({ json: { ok: true, action: A.SENTENCE_CHECK, data: resultFor(A.SENTENCE_CHECK) } });
+    } else
+      await route.fulfill({
+        json: { ok: true, action: A.SENTENCE_CHECK, data: resultFor(A.SENTENCE_CHECK) },
+      });
   });
   const before = await sentenceState(page);
   await clickAI(page, A.SENTENCE_CHECK);
   await page.getByRole('status').filter({ hasText: 'AI老师正在看看你的句子' }).waitFor();
   assert.equal(await page.locator('[data-ai-action]:disabled').count(), 1);
-  await page.waitForFunction(() => document.querySelector('.ai-result')?.getAttribute('aria-busy') === 'true');
-  release(); await page.locator('[data-ai-retry]:not([hidden])').waitFor();
-  await page.locator('[data-ai-retry]').click(); await done(page); await close(page);
-  assert.deepEqual(await sentenceState(page), before); assert.equal(calls, 2);
-  await page.context().setOffline(true); await clickAI(page, A.SENTENCE_CHECK);
-  await page.locator('#modal [role="alert"]').waitFor(); await close(page);
-  assert.deepEqual(await sentenceState(page), before); await page.context().setOffline(false);
+  await page.waitForFunction(
+    () => document.querySelector('.ai-result')?.getAttribute('aria-busy') === 'true',
+  );
+  release();
+  await page.locator('[data-ai-retry]:not([hidden])').waitFor();
+  await page.locator('[data-ai-retry]').click();
+  await done(page);
+  await close(page);
+  assert.deepEqual(await sentenceState(page), before);
+  assert.equal(calls, 2);
+  await page.context().setOffline(true);
+  await clickAI(page, A.SENTENCE_CHECK);
+  await page.locator('#modal [role="alert"]').waitFor();
+  await close(page);
+  assert.deepEqual(await sentenceState(page), before);
+  await page.context().setOffline(false);
 });
 for (const action of [A.SENTENCE_CHECK, A.PARAGRAPH_REVIEW])
   test(`${action}: malformed Gemini output reaches friendly error and one-request retry`, async (t) => {
@@ -304,18 +356,28 @@ for (const action of [A.SENTENCE_CHECK, A.PARAGRAPH_REVIEW])
     const state = activity === B.SENTENCE ? sentenceState : essayState;
     const before = await state(page);
     for (const [name, raw] of malformedResults(resultFor(action))) {
-      let calls = 0, providerCalls = 0;
+      let calls = 0,
+        providerCalls = 0;
       const endpoint = createTeacherHandler({
         env: { GEMINI_API_KEY: 'test-only-secret' },
-        generate: async (input) => ++providerCalls === 1 ? raw : JSON.stringify(resultFor(action, input.context)),
+        generate: async (input) =>
+          ++providerCalls === 1 ? raw : JSON.stringify(resultFor(action, input.context)),
       });
-      await page.route('**/api/gemini', async route => {
+      await page.route('**/api/gemini', async (route) => {
         calls++;
-        const response = await endpoint(new Request(route.request().url(), {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: route.request().postData(),
-        }));
+        const response = await endpoint(
+          new Request(route.request().url(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: route.request().postData(),
+          }),
+        );
         assert.equal(response.status, calls === 1 ? 502 : 200, name);
-        await route.fulfill({ status: response.status, contentType: 'application/json', body: await response.text() });
+        await route.fulfill({
+          status: response.status,
+          contentType: 'application/json',
+          body: await response.text(),
+        });
       });
       await clickAI(page, action);
       await page.locator('#modal [role="alert"]').waitFor();
@@ -337,14 +399,20 @@ test('late malformed response cannot replace a newer successful result', async (
   // Deliberately ignore AbortSignal to exercise the session guard independently of fetch cancellation.
   await page.evaluate(async () => {
     const { aiTeacher } = await import('/js/ai-teacher.js');
-    aiTeacher.sentence_check = () => new Promise(resolve => { window.releaseMalformedTutor = () => resolve({}); });
+    aiTeacher.sentence_check = () =>
+      new Promise((resolve) => {
+        window.releaseMalformedTutor = () => resolve({});
+      });
   });
   await mockTutor(page);
   await clickAI(page, A.SENTENCE_CHECK);
   await page.locator(`[data-ai-action="${A.SENTENCE_VIVID}"]`).dispatchEvent('click');
   await done(page);
   const successful = await page.locator('.ai-result').textContent();
-  await page.evaluate(async () => { window.releaseMalformedTutor(); await Promise.resolve(); });
+  await page.evaluate(async () => {
+    window.releaseMalformedTutor();
+    await Promise.resolve();
+  });
   assert.equal(await page.locator('.ai-result').textContent(), successful);
   assert.equal(await page.locator('#modal [role="alert"]').count(), 0);
   await close(page);
@@ -353,9 +421,10 @@ test('late malformed response cannot replace a newer successful result', async (
 
 test('block composition survives mode switching, navigation, reload and normal submission', async (t) => {
   const page = await fixture(t);
-  const record = records.find(item => builders[item.word]);
+  const record = records.find((item) => builders[item.word]);
   await page.goto(base + '#activity/builder?word=' + encodeURIComponent(record.id));
-  for (const key of ['action', 'event', 'who', 'when']) await page.locator(`[data-part="${key}:1"]`).click();
+  for (const key of ['action', 'event', 'who', 'when'])
+    await page.locator(`[data-part="${key}:1"]`).click();
   const text = await page.locator('.sentence-display').textContent();
   await page.getByRole('link', { name: '挑战：自己写一句' }).click();
   await page.locator('#own-sentence').fill(text);
@@ -375,7 +444,8 @@ test('block composition survives mode switching, navigation, reload and normal s
   await page.getByRole('link', { name: '挑战：自己写一句' }).click();
   assert.equal(await page.locator('#own-sentence').inputValue(), text);
   await page.locator('[data-navigation-back]').click();
-  for (const key of ['when', 'who', 'event', 'action']) await page.locator(`[data-part="${key}:0"]`).click();
+  for (const key of ['when', 'who', 'event', 'action'])
+    await page.locator(`[data-part="${key}:0"]`).click();
   await page.locator('#finish-builder').click();
   await page.locator('#activity-feedback').waitFor();
   assert.ok((await page.locator('#activity-feedback').textContent()).includes('第二句'));
@@ -544,7 +614,7 @@ for (const [width, height] of [
       }
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.locator('#submit-sentence').scrollIntoViewIfNeeded();
-    const submitHit = await page.locator('#submit-sentence').evaluate(el => {
+    const submitHit = await page.locator('#submit-sentence').evaluate((el) => {
       const r = el.getBoundingClientRect();
       const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
       return { reachable: el.contains(hit), y: r.y, bottom: r.bottom, hit: hit?.outerHTML };

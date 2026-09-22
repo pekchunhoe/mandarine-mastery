@@ -104,7 +104,7 @@ export const actions = {
   },
   [A.ESSAY_NEXT_STEP]: {
     instruction:
-      '结合题目、写作要点、previousParagraphs和currentParagraph，简短说明已写到哪里；不可假定学生写过未出现的内容。给2至3个下一步思考方向，每项为标题和问题。不写下一段、不提供成品段落。初期先帮助思考人物起因，已有内容时避免重复前文。最后请学生选一个方向自己写。',
+      '帮助学生继续完成当前写作要点的currentParagraph；结合题目、写作要点和currentParagraph，previousParagraphs最多只用于理解紧邻段落的衔接。简短说明这一段已写到哪里；不可假定学生写过未出现的内容。给2至3个下一步思考方向，每项为标题和问题。不写下一段、不提供成品段落。已有内容时避免重复当前段落。最后请学生选一个方向自己写。',
     schema: object({
       currentProgress: string(),
       directions: array(object({ title: string(40), prompt: string(120) }), 3, 2),

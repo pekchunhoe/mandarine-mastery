@@ -12,9 +12,15 @@ import { showModal, closeModal } from './modal.js';
 import { openVocabularyDialog } from './vocabulary-dialog.js';
 import { refreshSpeech } from '../js/speech-service.js';
 
-export const aiToolbar = (activity = TUTOR_ACTIVITY.ESSAY) =>
+// A workflow may expose only the actions that make sense at its current scope.
+// Guided essay writing uses this to keep paragraph tools beside the paragraph editor.
+export const aiToolbar = (
+  activity = TUTOR_ACTIVITY.ESSAY,
+  actions = activityTutorActions[activity],
+) =>
   '<section class="ai-toolbar" aria-label="AI老师"><strong>✨ AI老师 · 想一想，自己写</strong><div class="ai-actions">' +
-  activityTutorActions[activity]
+  actions
+    .filter((action) => activityTutorActions[activity]?.includes(action))
     .map(
       (action) =>
         '<button type="button" class="btn" data-ai-action="' +
