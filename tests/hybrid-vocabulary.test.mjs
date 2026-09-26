@@ -148,6 +148,7 @@ test('vocabulary and paragraph cache varies with writing context, expires at fiv
     const payload = {
       activity: B.ESSAY,
       context: {
+        selectedTitle: '森林里的发现',
         studentParagraph: context.studentSentence,
       },
     };
@@ -182,6 +183,7 @@ test('paragraph actions exclude essay and future paragraphs and locally reject t
   t.mock.method(globalThis, 'fetch', () => assert.fail('No network for invalid paragraphs'));
   for (const action of [A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID]) {
     const clean = tutorRequest(action, B.ESSAY, {
+      selectedTitle: '森林里的发现',
       studentParagraph: context.studentSentence,
       previousStudentParagraph: '紧邻上一段',
       studentEssay: '整篇作文含未来段落',
@@ -189,14 +191,17 @@ test('paragraph actions exclude essay and future paragraphs and locally reject t
     assert.equal(clean.context.previousStudentParagraph, '紧邻上一段');
     assert.equal(clean.context.studentEssay, undefined);
     await assert.rejects(
-      requestTeaching(action, { activity: B.ESSAY, context: { studentParagraph: '' } }),
+      requestTeaching(action, {
+        activity: B.ESSAY,
+        context: { selectedTitle: '森林里的发现', studentParagraph: '' },
+      }),
       /(自己的句子|自己的内容)/,
     );
   }
   await assert.rejects(
     requestTeaching(A.PARAGRAPH_VIVID, {
       activity: B.ESSAY,
-      context: { studentParagraph: '害怕' },
+      context: { selectedTitle: '森林里的发现', studentParagraph: '害怕' },
     }),
     /至少 6 字/,
   );

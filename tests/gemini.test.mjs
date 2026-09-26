@@ -75,7 +75,7 @@ test('empty and invalid JSON rejected', async () => {
 test('required text and invalid context rejected', async () => {
   for (const studentEssay of ['', '  ', null, 3])
     await failure(
-      request({ ...body(), context: { studentEssay } }),
+      request({ ...body(), context: { selectedTitle: '运动会', studentEssay } }),
       typeof studentEssay === 'string' ? 'TEXT_REQUIRED' : 'INVALID_REQUEST',
     );
   for (const context of [[], null, { studentParagraph: 8 }, { previousStudentParagraph: 5 }]) {

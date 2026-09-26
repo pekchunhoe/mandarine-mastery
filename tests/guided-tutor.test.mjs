@@ -103,7 +103,10 @@ test('empty/short input avoids client network and provider calls', async (t) => 
   ])
     await assert.rejects(requestTeaching(action, { ...inputFor(action), context: {} }));
   await assert.rejects(
-    requestTeaching(A.ESSAY_REVIEW, { activity: B.ESSAY, context: { studentEssay: '今天很好。' } }),
+    requestTeaching(A.ESSAY_REVIEW, {
+      activity: B.ESSAY,
+      context: { selectedTitle: '运动会', studentEssay: '今天很好。' },
+    }),
     /50/,
   );
   const response = await handler({ env: {}, generate: () => assert.fail('No provider') })(

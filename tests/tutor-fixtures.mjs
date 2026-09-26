@@ -59,6 +59,7 @@ export function inputFor(action) {
             ...(action === A.VOCABULARY_HELP ? { availableVocabularyIds: [word.id] } : {}),
           }
         : {
+            selectedTitle: '运动会',
             previousStudentParagraph: paragraphs[1],
             studentParagraph: paragraphs[2],
             studentEssay: paragraphs.join('\n\n'),

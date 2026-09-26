@@ -10,6 +10,7 @@ export class TeacherError extends Error {
   }
 }
 export const messages = {
+  TITLE_REQUIRED: '请先选择作文题目，AI老师才能根据题目帮助你。',
   METHOD_NOT_ALLOWED: '请使用 AI老师按钮提交。',
   INVALID_REQUEST: '内容格式有误，请重新打开 AI老师再试。',
   TEXT_REQUIRED: '先写一些内容，我才能帮你看看哦。',
@@ -47,9 +48,13 @@ const paragraphSuggestionSchema = object({
   explanation: string(140),
   studentTask,
 });
+// Applied to guided-writing prompts only, including the guided branch of vocabulary help.
+export const guidedTitleInstruction =
+  'selectedTitle是学生所选题目，是全文的主题依据；所有建议须同时贴合题目和学生自写内容，保留学生的想法、人物、事实和故事发展，不把文章变成另一个故事。切题看自然的语义关联，不是机械匹配关键词，不必反复写题目，也不必每段提到题目。正常的铺垫、细节和有创意但相关的情节不算离题；不因题目有另一种理解就替换学生想法。只有关联明显薄弱时才温和指出，并用问题或可选方向引导学生自己把重点带回题目。不要为了扩写或生动而引入无关事件；遇到偏题，先提示联系和选择，不强行编造新情节来纠正。不得使用或推测写作要点、本地提示、范句、预设文章、范文、EssayContents或教师支架。';
 export const actions = {
   [A.PARAGRAPH_HINT]: {
     instruction:
+      guidedTitleInstruction +
       '根据selectedTitle所选题目，结合previousStudentParagraphs中按顺序排列的学生自写故事，以及currentStudentParagraph中的当前未完成文字，给出提示。只延续学生自己的故事，不忽略当前已写内容，不虚构与故事矛盾的事实。绝不使用或推测写作要点、本地提示、范句、范文、EssayContents或预设段落。paragraphStage为opening时，只根据题目和当前文字帮助起头；result时，承接学生开头及已有经过，提示怎样继续发展；ending时，联系前面全部学生段落，帮助自然收束、呼应题目，只在合适时提示感受或收获，不强加道德教训。给2至4个可选择的ideas，不规定唯一答案；给1至2个独立的简短examples，每个最多两句、80字，不拼成可直接交作业的完整段落，不写完整开头、结尾或整篇作文。中文自然，适合小学生。studentTask是一句简短写作提醒，鼓励学生自己选择、自己动笔。',
     schema: object({
       ideas: array(string(100), 4, 2),
@@ -118,7 +123,8 @@ export const actions = {
       action,
       {
         instruction:
-          'studentParagraph是学生自己写下的当前段落，previousStudentParagraph如有也是学生自己写的上一段，只可用于必要的衔接。只以这些学生文字为基础，不假定题目、写作要点、提示、范句、范文或其他外部资料；不可从未提供的材料引入新故事。只帮助修改studentParagraph，不写后续段落或整篇作文。保留原意、人物和事实，未知细节用____让学生补充。给1至3个简短suggestions，一个简短参考段落example，并用explanation解释为什么这样更好。不要重复整段原文。参考写法仅供学习，最后请学生选择建议自行修改，不鼓励照抄。' +
+          guidedTitleInstruction +
+          'studentParagraph是学生自己写下的当前段落，previousStudentParagraph如有也是学生自己写的上一段，只可用于必要的衔接。以selectedTitle和这些学生文字为依据，不从外部材料引入新故事。只帮助修改studentParagraph，不写后续段落或整篇作文。保留原意、人物和事实，未知细节用____让学生补充。给1至3个简短suggestions，一个简短参考段落example，并用explanation解释为什么这样更好。若关联明显薄弱，在suggestions温和指出，参考写法仍保留已有事实，不能凭空制造符合题目的事件。不要重复整段原文。参考写法仅供学习，最后请学生选择建议自行修改，不鼓励照抄。' +
           (action === A.PARAGRAPH_EXPAND
             ? '扩充有用的动作、反应、顺序、感官、想法、环境或因果细节，让当前段落更完整。'
             : '选择自然的动作、神态、心理、语言、环境、声音或视觉细节，让当前段落更生动。比喻和拟人仅在自然时使用，不要修饰每一句，不用成人化的华丽文风。'),
@@ -128,7 +134,10 @@ export const actions = {
   ),
   [A.VOCABULARY_HELP]: {
     instruction:
-      '优先从vocabularyCandidates选真正适合当前情境的词，在recommendations返回原有vocabularyId、简短reason和exampleUsage。不可编造编号或更改词库字段。对于guidedEssay，studentParagraph是唯一的学生写作依据：只从这段文字推荐词语，不推测题目、写作要点、提示、范句或范文。当地词不足或有更贴切的表达时，可以在supplementalVocabulary补充词库以外的常用中文词语或短语，不需要编号。每项给准确带声调拼音pinyin、简短中文definitionChinese、包含该词的情境例句exampleSentence和适用原因reason。总共约5至8个，不强求比例，不用无关词凑数。不要重复词语、同义表达或近义词；优先保留合适的词库词。所有用词及解释必须适合小学生作文，健康、自然、易懂。鼓励学生选词自己写。',
+      '仅当activity为guidedEssay时遵循以下题目规则：' +
+      guidedTitleInstruction +
+      '对于guidedEssay，词语及例句必须同时支持selectedTitle的主题和studentParagraph实际写下的内容，不能仅因词库中有词就推荐无关表达。以上题目规则不适用于sentenceBuilder，其仍根据原有句子和情境推荐。' +
+      '优先从vocabularyCandidates选真正适合当前情境的词，在recommendations返回原有vocabularyId、简短reason和exampleUsage。不可编造编号或更改词库字段。当地词不足或有更贴切的表达时，可以在supplementalVocabulary补充词库以外的常用中文词语或短语，不需要编号。每项给准确带声调拼音pinyin、简短中文definitionChinese、包含该词的情境例句exampleSentence和适用原因reason。总共约5至8个，不强求比例，不用无关词凑数。不要重复词语、同义表达或近义词；优先保留合适的词库词。所有用词及解释必须适合小学生作文，健康、自然、易懂。鼓励学生选词自己写。',
     schema: object({
       recommendations: array(
         object({ vocabularyId: string(120), reason: string(120), exampleUsage: string(140) }),
@@ -140,7 +149,8 @@ export const actions = {
   },
   [A.ESSAY_NEXT_STEP]: {
     instruction:
-      'studentParagraph是学生自己写下的当前段落，previousStudentParagraph如有也是学生自己写的上一段，只可用于必要的衔接。只根据学生已经写下的内容，给2至3个下一步可能的发展方向；不可假定题目、写作要点、提示、范句、范文或其他外部资料，不可从未提供的材料引入新故事。简短说明学生已经写到哪里。每项为标题和问题，不写下一段、不提供成品段落。最后请学生选一个方向自己写。',
+      guidedTitleInstruction +
+      'studentParagraph是学生自己写下的当前段落，previousStudentParagraph如有也是学生自己写的上一段，只可用于必要的衔接。根据selectedTitle和学生已写内容，给2至3个兼顾故事衔接与题目关联的下一步方向。若已经偏题，用可选问题引导学生寻找与题目的联系，不无限延长无关故事，也不强行编造转换事件。简短说明学生已经写到哪里。每项为标题和问题，不写下一段、不提供成品段落。最后请学生选一个方向自己写。',
     schema: object({
       currentProgress: string(),
       directions: array(object({ title: string(40), prompt: string(120) }), 3, 2),
@@ -149,7 +159,8 @@ export const actions = {
   },
   [A.PARAGRAPH_REVIEW]: {
     instruction:
-      '只检查studentParagraph；previousStudentParagraph如有仅用于理解必要的衔接。两者都是学生自己写的文字。不可根据题目、写作要点、提示、范句、范文或其他外部资料评判内容。指出具体优点、最多3项最重要的问题（清楚、顺序、重复、语法、用词、标点、描写或过渡）及最多2项可选细节。issues.text说明问题，suggestions给短词或修改方法，不重写段落。有效的创意不是错误。revisionFocus只选一个优先修改点。',
+      guidedTitleInstruction +
+      '只检查studentParagraph；previousStudentParagraph如有仅用于理解必要的衔接。两者都是学生自己写的文字。仅以selectedTitle判断主题关联：贴题时可在strengths肯定，明显离题或有无关细节时在issues用type为切题给出温和观察和可选建议，不对照本地要点。指出具体优点、最多3项最重要的问题（切题、清楚、顺序、重复、语法、用词、标点、动作、神态、心理、环境描写或过渡）及最多2项可选细节。issues.text说明问题，suggestions给短词或修改方法，不重写段落。有效的创意不是错误。revisionFocus只选一个优先修改点。',
     schema: object({
       strengths: array(string(), 3, 1),
       issues: array(
@@ -162,7 +173,8 @@ export const actions = {
   },
   [A.ESSAY_REVIEW]: {
     instruction:
-      'studentEssay是学生自己写下的完整文章。只分析这篇文章本身，不假定题目、写作要点、提示、范句、范文或其他外部资料。简短体检结构、描写、词汇和语言。每项只给good或improve及具体简短反馈。最多3项优先改进，不打分、不猜测重复次数，不返回整篇或成品段落。最后请学生自己选择一个重点修改。',
+      guidedTitleInstruction +
+      'studentEssay是学生自己写下的完整文章。以selectedTitle为唯一主题参照，在categories.topicRelevance评估全文是否切题、是否持续联系题目；不和本地要点或范文比较。简短体检结构、段落发展、衔接、描写、词汇和语言。每项只给good或improve及具体简短反馈。最多3项优先改进，不打分、不猜测重复次数，不返回整篇或成品段落。最后请学生自己选择一个重点修改。',
     schema: object({
       summary: string(240),
       categories: object({

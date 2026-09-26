@@ -63,7 +63,7 @@ test('feedback displays all sections, preserves draft/count/selection/autosave/h
   ])
     assert.ok(await page.getByText(text, { exact: true }).isVisible());
   assert.equal(sent.context.studentEssay, essay);
-  assert.deepEqual(Object.keys(sent.context), ['studentEssay']);
+  assert.deepEqual(Object.keys(sent.context), ['selectedTitle', 'studentEssay']);
   await close(page);
   assert.deepEqual(await snapshot(page), before);
   await page.reload();

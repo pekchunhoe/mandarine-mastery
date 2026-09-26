@@ -263,7 +263,7 @@ export function guidedEssayWriting(root, ctx) {
           activity: TUTOR_ACTIVITY.ESSAY,
           scopeLabel: '根据所选题目和你自己写的故事给提示；不读取要点、提示或范句。',
           context: {
-            selectedTitle: topic.title,
+            selectedTitle: topic?.title,
             paragraphStage:
               activeParagraph === 0
                 ? 'opening'
@@ -277,10 +277,14 @@ export function guidedEssayWriting(root, ctx) {
       if (action === A.ESSAY_REVIEW)
         return {
           activity: TUTOR_ACTIVITY.ESSAY,
-          context: { studentEssay: lines.filter(Boolean).join('\n\n') },
+          context: {
+            selectedTitle: topic?.title,
+            studentEssay: lines.filter(Boolean).join('\n\n'),
+          },
         };
       const studentParagraph = lines[activeParagraph];
       const context = {
+        selectedTitle: topic?.title,
         studentParagraph,
         // Only a student-written neighbour may help with continuity.
         previousStudentParagraph: lines[activeParagraph - 1] || undefined,
@@ -291,7 +295,7 @@ export function guidedEssayWriting(root, ctx) {
       };
       return {
         activity: TUTOR_ACTIVITY.ESSAY,
-        scopeLabel: 'AI老师只看我自己写的这一段。',
+        scopeLabel: '根据所选题目和你自己写的这一段给建议。',
         context,
       };
     },

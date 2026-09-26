@@ -113,6 +113,7 @@ test('paragraph cache stays scoped to the current paragraph', async (t) => {
   const paragraph2 = {
     activity: B.ESSAY,
     context: {
+      selectedTitle: '森林里的发现',
       previousStudentParagraph: '星期六早上，我和弟弟到森林里散步。',
       studentParagraph: '我们走到树林深处时，突然听见一阵奇怪的声音。',
     },

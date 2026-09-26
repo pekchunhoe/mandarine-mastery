@@ -100,6 +100,161 @@ async function forestFixture(t) {
   return page;
 }
 
+test('all seven guided actions carry the selected title and student writing without rendered scaffold; title-only changes miss cache', async (t) => {
+  const page = await forestFixture(t),
+    sent = await mockTutor(page);
+  const firstId = await page.locator('#training-topic').inputValue();
+  const secondId = await page.locator('#training-topic option').nth(1).getAttribute('value');
+  await page.evaluate(async (id) => {
+    const { getEssayTitleById } = await import('/js/essay-title-service.js');
+    getEssayTitleById(id).title = '难忘的一天';
+  }, secondId);
+  const writing = [...forestStory];
+  writing[1] = '我和弟弟听见草丛里传来奇怪的声音。';
+  writing[2] = '看到小猫恢复精神，我和弟弟高兴地笑了。';
+  // Both title-specific saved drafts contain exactly the same student writing.
+  for (const id of [secondId, firstId]) {
+    await page.locator('#training-topic').selectOption(id);
+    for (let index = 0; index < 3; index++) {
+      await page.locator(`[data-guided-paragraph="${index}"]`).click();
+      await page.locator('#guided-line').fill(writing[index]);
+    }
+  }
+  await page.locator('[data-guided-paragraph="1"]').click();
+  for (let index = 0; index < 4; index++) await page.locator('#guided-more-help').click();
+  assert.match(await page.locator('.guided-help').textContent(), /雨伞.*范句/s);
+  assert.match(
+    await page.locator('.guided-editor .ai-toolbar strong').textContent(),
+    /根据题目和我写的内容帮助我/,
+  );
+  const runAll = async (selectedTitle, expectedCalls) => {
+    const before = await essayState(page);
+    for (const action of activityTutorActions[B.ESSAY]) {
+      await clickAI(page, action);
+      await done(page);
+      await close(page);
+      assert.deepEqual(await essayState(page), before);
+    }
+    assert.equal(sent.length, expectedCalls);
+    for (const request of sent.slice(-7)) {
+      assert.equal(request.context.selectedTitle, selectedTitle);
+      const c = request.context;
+      const fields =
+        request.action === A.PARAGRAPH_HINT
+          ? [
+              'selectedTitle',
+              'paragraphStage',
+              'currentStudentParagraph',
+              'previousStudentParagraphs',
+            ]
+          : request.action === A.ESSAY_REVIEW
+            ? ['selectedTitle', 'studentEssay']
+            : request.action === A.VOCABULARY_HELP
+              ? ['selectedTitle', 'studentParagraph', 'availableVocabularyIds']
+              : ['selectedTitle', 'studentParagraph', 'previousStudentParagraph'];
+      assert.deepEqual(Object.keys(c), fields);
+      if (request.action === A.ESSAY_REVIEW) assert.equal(c.studentEssay, writing.join('\n\n'));
+      else if (request.action === A.PARAGRAPH_HINT) {
+        assert.equal(c.paragraphStage, 'result');
+        assert.equal(c.currentStudentParagraph, writing[1]);
+        assert.deepEqual(c.previousStudentParagraphs, [writing[0]]);
+      } else {
+        assert.equal(c.studentParagraph, writing[1]);
+        if (request.action !== A.VOCABULARY_HELP)
+          assert.equal(c.previousStudentParagraph, writing[0]);
+      }
+      if (request.action !== A.ESSAY_REVIEW)
+        assert.ok(!JSON.stringify(request).includes(writing[2]));
+      assert.doesNotMatch(
+        JSON.stringify(request),
+        /下雨|公园|老人|雨伞|扶老奶奶|过马路|writingPoint|localHint|modelParagraph|EssayContents/,
+      );
+    }
+  };
+  await runAll('森林里的发现', 7);
+  await runAll('森林里的发现', 7);
+  await page.evaluate(async () => {
+    const { getEssayContents } = await import('/js/essay-content-service.js');
+    const { getEssayTitleById } = await import('/js/essay-title-service.js');
+    const topic = getEssayTitleById(document.querySelector('#training-topic').value);
+    topic.suggestedKeywords = ['新的本地提示：公园、大雨、老人和雨伞'];
+    topic.writingGuidance = ['在下雨天帮助老人'];
+    for (const row of getEssayContents())
+      row.content = '在下雨天帮助老人。\n\n最后，我马上撑着雨伞扶老奶奶过马路。\n\n雨停了。';
+  });
+  await page.locator('[data-guided-paragraph="1"]').click();
+  assert.match(
+    await page.locator('.example-hint-text').textContent(),
+    /我马上撑着雨伞扶老奶奶过马路/,
+  );
+  assert.match(await page.locator('.guided-help').textContent(), /新的本地提示/);
+  await runAll('森林里的发现', 7);
+  await page.locator('#training-topic').selectOption(secondId);
+  await page.locator('[data-guided-paragraph="1"]').click();
+  assert.equal(await page.locator('#guided-line').inputValue(), writing[1]);
+  await runAll('难忘的一天', 14);
+  for (const request of sent.slice(7)) assert.ok(!JSON.stringify(request).includes('森林里的发现'));
+});
+
+test('all guided actions show a local missing-title message without requests', async (t) => {
+  const page = await forestFixture(t),
+    sent = await mockTutor(page);
+  await page.locator('#guided-line').fill(forestStory.join('\n\n'));
+  await page.evaluate(async () => {
+    const { getEssayTitleById } = await import('/js/essay-title-service.js');
+    getEssayTitleById(document.querySelector('#training-topic').value).title = '';
+  });
+  for (const action of activityTutorActions[B.ESSAY]) {
+    await clickAI(page, action);
+    await page.locator('.ai-result [role="alert"]').waitFor();
+    assert.match(await page.locator('.ai-result').textContent(), /请先选择作文题目/);
+    await close(page);
+  }
+  assert.equal(sent.length, 0);
+});
+
+test('paragraph review displays gentle title relevance feedback without rewriting off-topic student text', async (t) => {
+  const page = await forestFixture(t);
+  const sports = '星期一学校举行运动会，我参加了一百米赛跑。';
+  const observation =
+    '这一段和《森林里的发现》的关系不明显，可以想一想怎样把内容带回森林里的经历。';
+  await page.locator('#guided-line').fill(sports);
+  const before = await essayState(page);
+  const handler = createTeacherHandler({
+    env: { GEMINI_API_KEY: 'fake' },
+    logger: {},
+    generate: async (input) => {
+      assert.equal(input.context.selectedTitle, '森林里的发现');
+      assert.equal(input.context.studentParagraph, sports);
+      return JSON.stringify({
+        ...resultFor(A.PARAGRAPH_REVIEW),
+        issues: [
+          {
+            type: '切题',
+            text: observation,
+            suggestions: ['想一想这段经历与森林里的发现有什么联系。'],
+          },
+        ],
+      });
+    },
+  });
+  await page.route('**/api/gemini', async (route) => {
+    const response = await handler(
+      new Request('http://localhost/api/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: route.request().postData(),
+      }),
+    );
+    await route.fulfill({ status: response.status, json: await response.json() });
+  });
+  await clickAI(page, A.PARAGRAPH_REVIEW);
+  await done(page);
+  assert.ok(await page.getByText(observation, { exact: true }).isVisible());
+  await close(page);
+  assert.deepEqual(await essayState(page), before);
+});
+
 test('paragraph hint: three real stage payloads exclude rendered rain/elderly scaffolding and preserve writing', async (t) => {
   const page = await forestFixture(t);
   const sent = await mockTutor(page);
@@ -305,6 +460,7 @@ test('forest paragraph expansion and vivid tools use P2, copy safely and change 
     assert.equal(input.context.previousStudentParagraph, forest[0]);
     assert.deepEqual(Object.keys(input.context).sort(), [
       'previousStudentParagraph',
+      'selectedTitle',
       'studentParagraph',
     ]);
     assert.ok(!JSON.stringify(input).includes(forest[2]));
@@ -376,7 +532,7 @@ test('guided AI sends only forest student writing, never rain-and-elderly scaffo
     assert.equal(request.context.studentParagraph, forest);
     assert.ok(
       !Object.keys(request.context).some((key) =>
-        /point|hint|example|sample|model|title|step/i.test(key),
+        /point|hint|example|sample|model|step/i.test(key),
       ),
     );
     for (const text of ['下雨', '公园', '老人', '雨伞', '扶老奶奶', '过马路'])
@@ -644,7 +800,7 @@ test('three-paragraph essay: paragraph tools stay beside paragraph 2 and send on
   await done(page);
   const essayReview = sent.at(-1);
   assert.equal(essayReview.context.studentEssay, paragraphs.join('\n\n'));
-  assert.deepEqual(Object.keys(essayReview.context), ['studentEssay']);
+  assert.deepEqual(Object.keys(essayReview.context), ['selectedTitle', 'studentEssay']);
   for (const label of ['切题', '结构', '描写', '词语', '语言', '优先修改'])
     assert.match(await page.locator('.ai-result').textContent(), new RegExp(label));
   await close(page);

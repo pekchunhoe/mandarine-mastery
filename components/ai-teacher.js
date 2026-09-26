@@ -21,7 +21,7 @@ export const aiToolbar = (
 ) =>
   '<section class="ai-toolbar" aria-label="AI老师"><strong>' +
   (activity === TUTOR_ACTIVITY.ESSAY
-    ? '🤖 AI老师 · 只看我自己写的内容'
+    ? '🤖 AI老师 · 根据题目和我写的内容帮助我'
     : '✨ AI老师 · 想一想，自己写') +
   '</strong><div class="ai-actions">' +
   actions
@@ -37,10 +37,7 @@ export const aiToolbar = (
     .join('') +
   '</div><p class="small muted">' +
   (activity === TUTOR_ACTIVITY.ESSAY
-    ? (actions.includes(A.PARAGRAPH_HINT)
-        ? '“给我提示”会参考所选题目和你已写的故事；其他按钮只看你写的内容。'
-        : 'AI老师只会阅读你自己写下的内容。') +
-      '本地提示和范句不会提交。请勿填写个人资料；由你来决定怎样修改。'
+    ? 'AI老师会参考所选题目和你自己写的内容；本地提示和范句不会提交。请勿填写个人资料；由你来决定怎样修改。'
     : '点击后会提交相关写作内容取得建议。请勿填写个人资料；由你来决定怎样修改。') +
   '</p></section>';
 const list = (items) => '<ul>' + items.map((item) => '<li>' + e(item) + '</li>').join('') + '</ul>';

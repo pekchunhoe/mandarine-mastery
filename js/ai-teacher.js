@@ -20,6 +20,7 @@ const CACHE_NAMESPACE = 'tutor-response-v3';
 const teachingCache = new Map();
 const unavailable = '暂时无法联系 AI老师，请稍后再试。';
 const errors = {
+  TITLE_REQUIRED: '请先选择作文题目，AI老师才能根据题目帮助你。',
   AI_NOT_CONFIGURED: 'AI老师暂时还不能使用，请联系老师。其他练习仍可正常使用。',
   AI_RATE_LIMIT: 'AI老师今天有点忙，请稍后再试。',
   AI_TIMEOUT: 'AI老师阅读的时间有点长，请稍后再试。',
