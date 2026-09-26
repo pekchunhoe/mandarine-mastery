@@ -19,7 +19,11 @@ export const aiToolbar = (
   activity = TUTOR_ACTIVITY.ESSAY,
   actions = activityTutorActions[activity],
 ) =>
-  '<section class="ai-toolbar" aria-label="AI老师"><strong>✨ AI老师 · 想一想，自己写</strong><div class="ai-actions">' +
+  '<section class="ai-toolbar" aria-label="AI老师"><strong>' +
+  (activity === TUTOR_ACTIVITY.ESSAY
+    ? '🤖 AI老师 · 只看我自己写的内容'
+    : '✨ AI老师 · 想一想，自己写') +
+  '</strong><div class="ai-actions">' +
   actions
     .filter((action) => activityTutorActions[activity]?.includes(action))
     .map(
@@ -31,7 +35,11 @@ export const aiToolbar = (
         '</button>',
     )
     .join('') +
-  '</div><p class="small muted">点击后会提交相关写作内容取得建议。请勿填写个人资料；由你来决定怎样修改。</p></section>';
+  '</div><p class="small muted">' +
+  (activity === TUTOR_ACTIVITY.ESSAY
+    ? 'AI老师只会阅读你自己写下的内容；提示和范句不会提交。请勿填写个人资料；由你来决定怎样修改。'
+    : '点击后会提交相关写作内容取得建议。请勿填写个人资料；由你来决定怎样修改。') +
+  '</p></section>';
 const list = (items) => '<ul>' + items.map((item) => '<li>' + e(item) + '</li>').join('') + '</ul>';
 const paragraph = (text) => '<p>' + e(text) + '</p>';
 const section = (title, html) => '<section><h3>' + title + '</h3>' + html + '</section>';

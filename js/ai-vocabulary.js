@@ -37,3 +37,33 @@ export function sentenceVocabularyCandidates(situation, word, grade, text) {
     text,
   );
 }
+
+// Guided Essay deliberately ranks only against text the student has written.
+// It never accepts a title, writing point, hint or model-essay argument.
+export function studentParagraphVocabularyCandidates(grade, studentParagraph) {
+  const text = String(studentParagraph || '');
+  if (!text.trim()) return [];
+  const runs = text.match(/\p{Script=Han}{2,}/gu) || [];
+  const terms = new Set();
+  for (const run of runs)
+    for (let size = 2; size <= Math.min(5, run.length); size += 1)
+      for (let start = 0; start <= run.length - size; start += 1)
+        terms.add(run.slice(start, start + size));
+  const matches = [...terms].flatMap((term) => vocabularyService.searchWords(term).slice(0, 3));
+  const gradeWords = vocabularyService.getWordsByGrade(grade);
+  const score = (word) =>
+    [word.word, ...(word.synonyms || []), ...(word.tags || [])].filter(
+      (term) => term.length >= 2 && text.includes(term),
+    ).length;
+  return [
+    ...new Map(
+      [
+        ...matches.filter((word) => score(word) > 0),
+        ...gradeWords.filter((word) => score(word) > 0),
+      ].map((word) => [word.id, word]),
+    ).values(),
+  ]
+    .sort((a, b) => score(b) - score(a))
+    .slice(0, 16)
+    .map((word) => word.id);
+}

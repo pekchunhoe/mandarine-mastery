@@ -63,7 +63,7 @@ test('feedback displays all sections, preserves draft/count/selection/autosave/h
   ])
     assert.ok(await page.getByText(text, { exact: true }).isVisible());
   assert.equal(sent.context.studentEssay, essay);
-  assert.ok(sent.context.keyPoints.length);
+  assert.deepEqual(Object.keys(sent.context), ['studentEssay']);
   await close(page);
   assert.deepEqual(await snapshot(page), before);
   await page.reload();
@@ -71,35 +71,16 @@ test('feedback displays all sections, preserves draft/count/selection/autosave/h
   assert.equal(await page.locator('#guided-line').inputValue(), essay);
   assert.equal(await page.locator('#guided-copy').isEnabled(), true);
 });
-test('hint handles blank draft locally, then carries current step without inserting text', async (t) => {
+test('guided hints remain local scaffolding and never invoke AI', async (t) => {
   const page = await fixture(t);
   await page.locator('[data-guided-paragraph="1"]').click();
-  await page.locator('[data-ai-action="sentence_hint"]').click();
-  await page.getByText('谁在什么地方？', { exact: true }).waitFor();
-  await close(page);
-  assert.equal(await page.locator('#guided-line').inputValue(), '');
-  await page.locator('#guided-line').fill('小明开始跑步。');
-  let sent;
-  await page.route('**/api/gemini', async (route) => {
-    sent = route.request().postDataJSON();
-    await route.fulfill({
-      json: {
-        ok: true,
-        action: A.SENTENCE_HINT,
-        data: {
-          thinkingQuestions: ['当时看到了什么？', '你做了什么？'],
-          usefulPatterns: ['一边……一边……'],
-          studentTask: '自己试着写。',
-        },
-      },
-    });
-  });
+  assert.equal(await page.locator('[data-ai-action="sentence_hint"]').count(), 0);
   const before = await snapshot(page);
-  await page.locator('[data-ai-action="sentence_hint"]').click();
-  await page.getByText('当时看到了什么？', { exact: true }).waitFor();
-  assert.equal(sent.context.currentStep, 2);
-  assert.equal(sent.context.currentParagraph, '小明开始跑步。');
-  await close(page);
+  await page.locator('#guided-more-help').click();
+  await page.locator('#guided-more-help').click();
+  assert.match(await page.locator('.guided-help').textContent(), /写作要点/);
+  assert.equal(await page.locator('#modal').evaluate((el) => el.open), false);
+  assert.equal(await page.locator('#guided-line').inputValue(), '');
   assert.deepEqual(await snapshot(page), before);
 });
 test('vocabulary recommendations render authoritative records and reuse floating library', async (t) => {
@@ -155,7 +136,7 @@ test('vocabulary recommendations render authoritative records and reuse floating
   await page.locator('#lookup-search').waitFor();
   await close(page);
 });
-test('paragraph check uses selected text then cursor paragraph and retains selection', async (t) => {
+test('paragraph check uses the full student paragraph and retains selection', async (t) => {
   const page = await fixture(t);
   const text = '第一段写比赛。\n第二段写心情。';
   await page.locator('#guided-line').fill(text);
@@ -171,7 +152,7 @@ test('paragraph check uses selected text then cursor paragraph and retains selec
           missingDetails: ['想想动作。'],
           issues: [
             {
-              text: sent.context.currentParagraph,
+              text: sent.context.studentParagraph,
               type: '表达',
               suggestions: ['可以写得具体些。', '想想具体的动作。'],
             },
@@ -188,7 +169,7 @@ test('paragraph check uses selected text then cursor paragraph and retains selec
   });
   await page.locator('[data-ai-action="paragraph_review"]').click();
   await page.getByText('按自己的想法修改。', { exact: true }).waitFor();
-  assert.equal(sent.context.currentParagraph, text.slice(0, 3));
+  assert.equal(sent.context.studentParagraph, text);
   assert.match(await page.locator('.ai-result').textContent(), /做得好的地方.*可以改进.*轮到你了/s);
   await close(page);
   assert.deepEqual(
@@ -201,7 +182,7 @@ test('paragraph check uses selected text then cursor paragraph and retains selec
   });
   await page.locator('[data-ai-action="paragraph_review"]').click();
   await page.getByText('按自己的想法修改。', { exact: true }).waitFor();
-  assert.equal(sent.context.currentParagraph, '第二段写心情。');
+  assert.equal(sent.context.studentParagraph, text);
   await close(page);
   assert.equal(await page.locator('#guided-line').inputValue(), text);
 });

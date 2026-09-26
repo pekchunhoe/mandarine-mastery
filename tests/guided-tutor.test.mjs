@@ -76,15 +76,14 @@ test('legacy actions, invalid activity, field types and oversized arrays rejecte
       (await handler()(request({ ...inputFor(A.SENTENCE_CHECK), activity }))).status,
       400,
     );
-  for (const context of [
-    { keyPoints: 'bad' },
-    { previousParagraphs: [8] },
-    { currentStep: 0 },
-    { keyPoints: Array(9).fill('x') },
+  for (const [context, status] of [
+    [{ studentParagraph: 8 }, 400],
+    [{ previousStudentParagraph: 8 }, 400],
+    [{ studentParagraph: '文'.repeat(2001) }, 413],
   ])
     assert.equal(
       (await handler()(request({ ...inputFor(A.ESSAY_NEXT_STEP), context }))).status,
-      400,
+      status,
     );
 });
 test('empty/short input avoids client network and provider calls', async (t) => {
@@ -115,7 +114,7 @@ test('empty/short input avoids client network and provider calls', async (t) => 
 test('sentence and aggregate context limits and short essay enforced server-side', async () => {
   for (const [action, context, status] of [
     [A.SENTENCE_CHECK, { studentSentence: '文'.repeat(501) }, 413],
-    [A.ESSAY_NEXT_STEP, { previousParagraphs: Array(5).fill('文'.repeat(1800)) }, 413],
+    [A.ESSAY_NEXT_STEP, { previousStudentParagraph: '文'.repeat(2001) }, 413],
     [A.ESSAY_REVIEW, { studentEssay: '今天很好。' }, 400],
   ])
     assert.equal((await handler()(request({ ...inputFor(action), context }))).status, status);
@@ -195,14 +194,15 @@ test('all curated fields preserved; invented and duplicate IDs discarded; fabric
     502,
   );
 });
-test('next step keeps earlier paragraphs; other actions send only needed fields', () => {
+test('paragraph actions keep only student writing fields', () => {
   const input = inputFor(A.ESSAY_NEXT_STEP),
     clean = validateInput(input);
-  assert.deepEqual(clean.context.previousParagraphs, input.context.previousParagraphs);
+  assert.equal(clean.context.previousStudentParagraph, input.context.previousStudentParagraph);
+  assert.equal(clean.context.studentParagraph, input.context.studentParagraph);
   assert.ok(!Object.hasOwn(clean.context, 'studentEssay'));
   const review = validateInput(inputFor(A.ESSAY_REVIEW));
   assert.ok(review.context.studentEssay.includes('\n\n'));
-  assert.ok(!Object.hasOwn(review.context, 'previousParagraphs'));
+  assert.ok(!Object.hasOwn(review.context, 'previousStudentParagraph'));
   assert.match(actions[A.ESSAY_NEXT_STEP].instruction, /不写下一段/);
 });
 test('caller cancellation aborts SDK without waiting for timeout', async () => {

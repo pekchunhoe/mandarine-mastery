@@ -148,57 +148,55 @@ test('vocabulary and paragraph cache varies with writing context, expires at fiv
     const payload = {
       activity: B.ESSAY,
       context: {
-        essayTitle: '森林里的声音',
-        keyPoints: ['事情经过'],
-        currentParagraph: context.studentSentence,
-        currentStep: 2,
+        studentParagraph: context.studentSentence,
       },
     };
     await requestTeaching(action, payload);
     await requestTeaching(action, payload);
     assert.equal(calls, 1);
-    for (const patch of [
-      { essayTitle: '新的题目' },
-      { keyPoints: ['人物反应'] },
-      { currentParagraph: '后来发现原来是一只小猫。' },
-    ])
-      await requestTeaching(action, { ...payload, context: { ...payload.context, ...patch } });
-    assert.equal(calls, 4);
+    await requestTeaching(action, {
+      ...payload,
+      context: { ...payload.context, hint: '下雨天帮助老人', example: '撑着雨伞' },
+    });
+    assert.equal(calls, 1);
+    await requestTeaching(action, {
+      ...payload,
+      context: { ...payload.context, studentParagraph: '后来发现原来是一只小猫。' },
+    });
+    assert.equal(calls, 2);
     t.mock.timers.tick(CACHE_TTL_MS + 1);
     await requestTeaching(action, payload);
-    assert.equal(calls, 5);
+    assert.equal(calls, 3);
     clearTeachingCache();
     cacheable = false;
     await requestTeaching(action, payload);
     await requestTeaching(action, payload);
-    assert.equal(calls, 7);
+    assert.equal(calls, 5);
     malformed = true;
     await assert.rejects(requestTeaching(action, payload));
     await assert.rejects(requestTeaching(action, payload));
-    assert.equal(calls, 9);
+    assert.equal(calls, 7);
   }
 });
 test('paragraph actions exclude essay and future paragraphs and locally reject trivial text', async (t) => {
   t.mock.method(globalThis, 'fetch', () => assert.fail('No network for invalid paragraphs'));
   for (const action of [A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID]) {
     const clean = tutorRequest(action, B.ESSAY, {
-      essayTitle: '森林里的声音',
-      keyPoints: ['事情经过'],
-      currentParagraph: context.studentSentence,
-      previousParagraphs: ['更早的段落', '紧邻上一段'],
+      studentParagraph: context.studentSentence,
+      previousStudentParagraph: '紧邻上一段',
       studentEssay: '整篇作文含未来段落',
     });
-    assert.deepEqual(clean.context.previousParagraphs, ['紧邻上一段']);
+    assert.equal(clean.context.previousStudentParagraph, '紧邻上一段');
     assert.equal(clean.context.studentEssay, undefined);
     await assert.rejects(
-      requestTeaching(action, { activity: B.ESSAY, context: { currentParagraph: '' } }),
-      /开头/,
+      requestTeaching(action, { activity: B.ESSAY, context: { studentParagraph: '' } }),
+      /(自己的句子|自己的内容)/,
     );
   }
   await assert.rejects(
     requestTeaching(A.PARAGRAPH_VIVID, {
       activity: B.ESSAY,
-      context: { currentParagraph: '害怕' },
+      context: { studentParagraph: '害怕' },
     }),
     /至少 6 字/,
   );

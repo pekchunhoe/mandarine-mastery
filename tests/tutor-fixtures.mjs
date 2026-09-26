@@ -48,11 +48,8 @@ export function inputFor(action) {
             ...(action === A.VOCABULARY_HELP ? { availableVocabularyIds: [word.id] } : {}),
           }
         : {
-            essayTitle: '一次难忘的经历',
-            keyPoints: ['事情的经过', '自己的感受'],
-            previousParagraphs: paragraphs.slice(0, 2),
-            currentParagraph: paragraphs[2],
-            currentStep: 3,
+            previousStudentParagraph: paragraphs[1],
+            studentParagraph: paragraphs[2],
             studentEssay: paragraphs.join('\n\n'),
           },
   };

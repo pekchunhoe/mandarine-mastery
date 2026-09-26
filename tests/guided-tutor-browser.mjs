@@ -98,6 +98,13 @@ for (const mode of ['free', 'blocks', 'paragraph'])
               exampleSentence: '脚步声越来越近，我的心怦怦直跳。',
               reason: '可以写出躲藏时的心情。',
             },
+            {
+              word: '屏住呼吸',
+              pinyin: 'bǐng zhù hū xī',
+              definitionChinese: '暂时不呼吸，不发出声音。',
+              exampleSentence: '听见奇怪的声音后，我屏住呼吸。',
+              reason: '可以描写害怕时的反应。',
+            },
           ],
           studentTask: '选择一个词，自己写一句话。',
         });
@@ -146,9 +153,12 @@ test('forest paragraph expansion and vivid tools use P2, copy safely and change 
     await clickAI(page, action);
     await done(page);
     const input = sent.at(-1);
-    assert.equal(input.context.currentParagraph, forest[1]);
-    assert.deepEqual(input.context.previousParagraphs, [forest[0]]);
-    assert.ok(input.context.essayTitle && input.context.keyPoints.length);
+    assert.equal(input.context.studentParagraph, forest[1]);
+    assert.equal(input.context.previousStudentParagraph, forest[0]);
+    assert.deepEqual(Object.keys(input.context).sort(), [
+      'previousStudentParagraph',
+      'studentParagraph',
+    ]);
     assert.ok(!JSON.stringify(input).includes(forest[2]));
     await page.evaluate(() => {
       navigator.clipboard.writeText = async (text) => {
@@ -169,9 +179,108 @@ test('forest paragraph expansion and vivid tools use P2, copy safely and change 
     await done(page);
     await close(page);
     assert.equal(sent.length, count + 1);
-    assert.equal(sent.at(-1).context.currentParagraph, forest[2]);
+    assert.equal(sent.at(-1).context.studentParagraph, forest[2]);
     await page.locator('[data-guided-paragraph="1"]').click();
   }
+});
+
+test('guided AI sends only forest student writing, never rain-and-elderly scaffolding', async (t) => {
+  const page = await fixture(t, B.ESSAY);
+  const forest = '星期六，我和弟弟来到森林里。我们突然听见草丛里传来奇怪的声音。';
+  const forbiddenScaffold =
+    '描写下雨天在公园里帮助一位老人。 我马上撑着雨伞跑过去扶老奶奶过马路。 可以描写大雨、雨伞、老人和帮助别人的经过。';
+  const requests = [];
+  await page.locator('#guided-line').fill(forest);
+  await page.route('**/api/gemini', async (route) => {
+    const input = route.request().postDataJSON();
+    requests.push(input);
+    const data =
+      input.action === A.VOCABULARY_HELP
+        ? {
+            recommendations: [
+              {
+                source: 'ai',
+                reason: '适合学生写到的紧张情景。',
+                exampleUsage: '草丛里传来声音时，我屏住呼吸。',
+                vocabulary: {
+                  word: '屏住呼吸',
+                  pinyin: 'bǐng zhù hū xī',
+                  definitionChinese: '暂时不呼吸，不发出声音。',
+                  exampleSentence: '草丛里传来声音时，我屏住呼吸。',
+                },
+              },
+            ],
+            studentTask: '选择一个词，自己写一句话。',
+          }
+        : resultFor(input.action, input.context);
+    await route.fulfill({ json: { ok: true, action: input.action, data } });
+  });
+  for (const action of [
+    A.VOCABULARY_HELP,
+    A.PARAGRAPH_EXPAND,
+    A.PARAGRAPH_VIVID,
+    A.ESSAY_NEXT_STEP,
+    A.PARAGRAPH_REVIEW,
+  ]) {
+    await clickAI(page, action);
+    await done(page);
+    const request = requests.at(-1);
+    assert.equal(request.context.studentParagraph, forest);
+    assert.ok(
+      !Object.keys(request.context).some((key) =>
+        /point|hint|example|sample|model|title|step/i.test(key),
+      ),
+    );
+    for (const text of ['下雨', '公园', '老人', '雨伞', '扶老奶奶', '过马路'])
+      assert.ok(
+        !JSON.stringify(request).includes(text),
+        `${action} leaked ${text}: ${forbiddenScaffold}`,
+      );
+    await close(page);
+  }
+  assert.equal(requests.length, 5);
+});
+
+test('hint changes do not invalidate guided AI cache; student changes do', async (t) => {
+  const page = await fixture(t, B.ESSAY);
+  const first = '我躲在树后，听见脚步声越来越近。';
+  const second = '我躲在树后，听见脚步声越来越近，心里很害怕。';
+  const requests = [];
+  await page.locator('#guided-line').fill(first);
+  await page.route('**/api/gemini', async (route) => {
+    const input = route.request().postDataJSON();
+    requests.push(input);
+    await route.fulfill({
+      json: {
+        ok: true,
+        action: input.action,
+        data: {
+          currentProgress: '你写到了躲在树后。',
+          directions: [
+            { title: '写反应', prompt: '当时你的身体有什么反应？' },
+            { title: '写发现', prompt: '后来你发现声音从哪里来？' },
+          ],
+          studentTask: '选择一个方向，自己继续写。',
+        },
+      },
+    });
+  });
+  await clickAI(page, A.ESSAY_NEXT_STEP);
+  await done(page);
+  await close(page);
+  assert.equal(requests.length, 1);
+  await page.locator('#guided-more-help').click();
+  await page.locator('#guided-more-help').click();
+  await clickAI(page, A.ESSAY_NEXT_STEP);
+  await done(page);
+  await close(page);
+  assert.equal(requests.length, 1);
+  await page.locator('#guided-line').fill(second);
+  await clickAI(page, A.ESSAY_NEXT_STEP);
+  await done(page);
+  await close(page);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].context.studentParagraph, second);
 });
 async function sentenceSetup(page) {
   await page.locator('#sentence-context').selectOption('你自己想到的情境');
@@ -334,7 +443,6 @@ test('three-paragraph essay: paragraph tools stay beside paragraph 2 and send on
   );
   await page.locator('[data-guided-paragraph="1"]').click();
   const paragraphActions = [
-    A.SENTENCE_HINT,
     A.VOCABULARY_HELP,
     A.PARAGRAPH_EXPAND,
     A.PARAGRAPH_VIVID,
@@ -359,21 +467,18 @@ test('three-paragraph essay: paragraph tools stay beside paragraph 2 and send on
     await clickAI(page, action);
     await done(page);
     const input = sent.at(-1);
-    assert.equal(input.context.essayTitle, '一次难忘的经历');
-    assert.ok(input.context.keyPoints.length);
-    assert.equal(input.context.currentParagraph, paragraphs[1]);
+    assert.equal(input.context.studentParagraph, paragraphs[1]);
     assert.ok(!Object.hasOwn(input.context, 'studentEssay'));
     assert.ok(!JSON.stringify(input.context).includes(paragraphs[2]));
     assert.ok(!JSON.stringify(input.context).includes(paragraphs.join('\n\n')));
-    if ([A.SENTENCE_HINT, A.VOCABULARY_HELP].includes(action))
-      assert.ok(!Object.hasOwn(input.context, 'previousParagraphs'));
-    if (action !== A.VOCABULARY_HELP) assert.equal(input.context.currentStep, 2);
+    if (action === A.VOCABULARY_HELP)
+      assert.ok(!Object.hasOwn(input.context, 'previousStudentParagraph'));
     if (action === A.ESSAY_NEXT_STEP) {
-      assert.deepEqual(input.context.previousParagraphs, [paragraphs[0]]);
+      assert.equal(input.context.previousStudentParagraph, paragraphs[0]);
       assert.match(await page.locator('.ai-result').textContent(), /比赛的开始和经过/);
     }
     if ([A.PARAGRAPH_REVIEW, A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].includes(action)) {
-      assert.deepEqual(input.context.previousParagraphs, [paragraphs[0]]);
+      assert.equal(input.context.previousStudentParagraph, paragraphs[0]);
     }
     if ([A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].includes(action)) {
       await page.evaluate(() => {
@@ -391,7 +496,7 @@ test('three-paragraph essay: paragraph tools stay beside paragraph 2 and send on
   await done(page);
   const essayReview = sent.at(-1);
   assert.equal(essayReview.context.studentEssay, paragraphs.join('\n\n'));
-  assert.ok(!Object.hasOwn(essayReview.context, 'currentParagraph'));
+  assert.deepEqual(Object.keys(essayReview.context), ['studentEssay']);
   for (const label of ['切题', '结构', '描写', '词语', '语言', '优先修改'])
     assert.match(await page.locator('.ai-result').textContent(), new RegExp(label));
   await close(page);
@@ -794,7 +899,7 @@ for (const [width, height] of [
         : data,
     );
     const before = await essayState(page);
-    assert.equal(await page.locator('.guided-editor [data-ai-action]').count(), 6);
+    assert.equal(await page.locator('.guided-editor [data-ai-action]').count(), 5);
     assert.equal(await page.locator('.complete-essay [data-ai-action]').count(), 1);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.locator('.guided-editor .ai-toolbar').scrollIntoViewIfNeeded();

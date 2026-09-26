@@ -113,11 +113,8 @@ test('paragraph cache stays scoped to the current paragraph', async (t) => {
   const paragraph2 = {
     activity: B.ESSAY,
     context: {
-      essayTitle: '森林里的声音',
-      keyPoints: ['事情的经过'],
-      previousParagraphs: ['星期六早上，我和弟弟到森林里散步。'],
-      currentParagraph: '我们走到树林深处时，突然听见一阵奇怪的声音。',
-      currentStep: 2,
+      previousStudentParagraph: '星期六早上，我和弟弟到森林里散步。',
+      studentParagraph: '我们走到树林深处时，突然听见一阵奇怪的声音。',
     },
   };
   await requestTeaching(A.PARAGRAPH_REVIEW, paragraph2);
@@ -126,9 +123,8 @@ test('paragraph cache stays scoped to the current paragraph', async (t) => {
     ...paragraph2,
     context: {
       ...paragraph2.context,
-      previousParagraphs: [paragraph2.context.currentParagraph],
-      currentParagraph: '后来我们才发现，原来是一只小猫躲在草丛里。',
-      currentStep: 3,
+      previousStudentParagraph: paragraph2.context.studentParagraph,
+      studentParagraph: '后来我们才发现，原来是一只小猫躲在草丛里。',
     },
   });
   assert.equal(calls, 2);

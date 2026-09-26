@@ -109,7 +109,7 @@ export const actions = {
       action,
       {
         instruction:
-          '只帮助修改currentParagraph这一段，结合essayTitle和当前keyPoints；previousParagraphs最多只用于紧邻上一段的衔接。不写后续段落或整篇作文。保留原意、人物和事实，未知细节用____让学生补充。给1至3个简短suggestions，一个简短参考段落example，并用explanation解释为什么这样更好。不要重复整段原文。参考写法仅供学习，最后请学生选择建议自行修改，不鼓励照抄。' +
+          'studentParagraph是学生自己写下的当前段落，previousStudentParagraph如有也是学生自己写的上一段，只可用于必要的衔接。只以这些学生文字为基础，不假定题目、写作要点、提示、范句、范文或其他外部资料；不可从未提供的材料引入新故事。只帮助修改studentParagraph，不写后续段落或整篇作文。保留原意、人物和事实，未知细节用____让学生补充。给1至3个简短suggestions，一个简短参考段落example，并用explanation解释为什么这样更好。不要重复整段原文。参考写法仅供学习，最后请学生选择建议自行修改，不鼓励照抄。' +
           (action === A.PARAGRAPH_EXPAND
             ? '扩充有用的动作、反应、顺序、感官、想法、环境或因果细节，让当前段落更完整。'
             : '选择自然的动作、神态、心理、语言、环境、声音或视觉细节，让当前段落更生动。比喻和拟人仅在自然时使用，不要修饰每一句，不用成人化的华丽文风。'),
@@ -119,7 +119,7 @@ export const actions = {
   ),
   [A.VOCABULARY_HELP]: {
     instruction:
-      '优先从vocabularyCandidates选真正适合当前情境的词，在recommendations返回原有vocabularyId、简短reason和exampleUsage。不可编造编号或更改词库字段。当地词不足或有更贴切的表达时，可以在supplementalVocabulary补充词库以外的常用中文词语或短语，不需要编号。每项给准确带声调拼音pinyin、简短中文definitionChinese、包含该词的情境例句exampleSentence和适用原因reason。总共约5至8个，不强求比例，不用无关词凑数。不要重复词语、同义表达或近义词；优先保留合适的词库词。所有用词及解释必须适合小学生作文，健康、自然、易懂。鼓励学生选词自己写。',
+      '优先从vocabularyCandidates选真正适合当前情境的词，在recommendations返回原有vocabularyId、简短reason和exampleUsage。不可编造编号或更改词库字段。对于guidedEssay，studentParagraph是唯一的学生写作依据：只从这段文字推荐词语，不推测题目、写作要点、提示、范句或范文。当地词不足或有更贴切的表达时，可以在supplementalVocabulary补充词库以外的常用中文词语或短语，不需要编号。每项给准确带声调拼音pinyin、简短中文definitionChinese、包含该词的情境例句exampleSentence和适用原因reason。总共约5至8个，不强求比例，不用无关词凑数。不要重复词语、同义表达或近义词；优先保留合适的词库词。所有用词及解释必须适合小学生作文，健康、自然、易懂。鼓励学生选词自己写。',
     schema: object({
       recommendations: array(
         object({ vocabularyId: string(120), reason: string(120), exampleUsage: string(140) }),
@@ -131,7 +131,7 @@ export const actions = {
   },
   [A.ESSAY_NEXT_STEP]: {
     instruction:
-      '帮助学生继续完成当前写作要点的currentParagraph；结合题目、写作要点和currentParagraph，previousParagraphs最多只用于理解紧邻段落的衔接。简短说明这一段已写到哪里；不可假定学生写过未出现的内容。给2至3个下一步思考方向，每项为标题和问题。不写下一段、不提供成品段落。已有内容时避免重复当前段落。最后请学生选一个方向自己写。',
+      'studentParagraph是学生自己写下的当前段落，previousStudentParagraph如有也是学生自己写的上一段，只可用于必要的衔接。只根据学生已经写下的内容，给2至3个下一步可能的发展方向；不可假定题目、写作要点、提示、范句、范文或其他外部资料，不可从未提供的材料引入新故事。简短说明学生已经写到哪里。每项为标题和问题，不写下一段、不提供成品段落。最后请学生选一个方向自己写。',
     schema: object({
       currentProgress: string(),
       directions: array(object({ title: string(40), prompt: string(120) }), 3, 2),
@@ -140,7 +140,7 @@ export const actions = {
   },
   [A.PARAGRAPH_REVIEW]: {
     instruction:
-      '只检查currentParagraph，previousParagraphs仅用于理解衔接。指出具体优点、最多3项最重要的问题（内容、顺序、重复、语法、用词、标点或过渡）及最多2项可选细节。issues.text说明问题，suggestions给短词或修改方法，不重写段落。有效的创意不是错误。revisionFocus只选一个优先修改点。',
+      '只检查studentParagraph；previousStudentParagraph如有仅用于理解必要的衔接。两者都是学生自己写的文字。不可根据题目、写作要点、提示、范句、范文或其他外部资料评判内容。指出具体优点、最多3项最重要的问题（清楚、顺序、重复、语法、用词、标点、描写或过渡）及最多2项可选细节。issues.text说明问题，suggestions给短词或修改方法，不重写段落。有效的创意不是错误。revisionFocus只选一个优先修改点。',
     schema: object({
       strengths: array(string(), 3, 1),
       issues: array(
@@ -153,7 +153,7 @@ export const actions = {
   },
   [A.ESSAY_REVIEW]: {
     instruction:
-      '分析studentEssay的完整文章，结合题目和要点简短体检切题、结构、描写、词汇和语言。每项只给good或improve及具体简短反馈。最多3项优先改进，不打分、不猜测重复次数，不返回整篇或成品段落。最后请学生自己选择一个重点修改。',
+      'studentEssay是学生自己写下的完整文章。只分析这篇文章本身，不假定题目、写作要点、提示、范句、范文或其他外部资料。简短体检结构、描写、词汇和语言。每项只给good或improve及具体简短反馈。最多3项优先改进，不打分、不猜测重复次数，不返回整篇或成品段落。最后请学生自己选择一个重点修改。',
     schema: object({
       summary: string(240),
       categories: object({

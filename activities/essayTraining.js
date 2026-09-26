@@ -9,8 +9,7 @@ import { enhanceSpeechUI, stop } from '../js/speech-service.js';
 import { openVocabularyDialog } from '../components/vocabulary-dialog.js';
 import { copyText as copyEssayText } from '../js/clipboard.js';
 import { aiToolbar, attachAITeacher } from '../components/ai-teacher.js';
-import { paragraphTarget } from '../js/ai-teacher.js';
-import { teachingVocabularyCandidates } from '../js/ai-vocabulary.js';
+import { studentParagraphVocabularyCandidates } from '../js/ai-vocabulary.js';
 import { TUTOR_ACTION as A, TUTOR_ACTIVITY } from '../js/tutor-actions.js';
 // Preserve the existing export for callers and essay-copy regression tests.
 export { copyEssayText };
@@ -226,7 +225,6 @@ export function guidedEssayWriting(root, ctx) {
         ? `<section class="hint-card example-hint"><h4>范句（参考后请用自己的内容写）</h4><p class="example-hint-text">${e(referenceParagraph)}</p></section>`
         : '';
     const paragraphActions = [
-      A.SENTENCE_HINT,
       A.VOCABULARY_HELP,
       A.PARAGRAPH_EXPAND,
       A.PARAGRAPH_VIVID,
@@ -259,43 +257,24 @@ export function guidedEssayWriting(root, ctx) {
       const lines = draft.lines.map((line, index) =>
         index === activeParagraph && editor ? editor.value : line,
       );
-      const content = getActiveEssayContentsByEssayId(topic.id).find(
-        (item) => item.contentId === contentId,
-      );
-      const point = deriveEssayTraining(content, topic).paragraphs[activeParagraph];
-      const writingPoint = [point.label, point.role, ...point.keyPoints].join('、');
-      const target =
-        action === A.PARAGRAPH_REVIEW
-          ? paragraphTarget(editor, lines[activeParagraph])
-          : { text: lines[activeParagraph], label: '当前写作段落' };
-      const paragraphContext = {
-        essayTitle: topic.title,
-        keyPoints: [point.role, ...point.keyPoints],
-        currentStep: activeParagraph + 1,
-        currentParagraph: target.text,
-        // A single completed neighbour is enough for an optional transition check.
-        previousParagraphs: lines.slice(Math.max(0, activeParagraph - 1), activeParagraph),
-      };
       if (action === A.ESSAY_REVIEW)
         return {
           activity: TUTOR_ACTIVITY.ESSAY,
-          context: {
-            essayTitle: topic.title,
-            keyPoints: topic.writingGuidance,
-            studentEssay: lines.filter(Boolean).join('\n\n'),
-          },
+          context: { studentEssay: lines.filter(Boolean).join('\n\n') },
         };
+      const studentParagraph = lines[activeParagraph];
       const context = {
-        ...paragraphContext,
-        // The candidate ranking is deliberately scoped to this writing point and paragraph.
+        studentParagraph,
+        // Only a student-written neighbour may help with continuity.
+        previousStudentParagraph: lines[activeParagraph - 1] || undefined,
         availableVocabularyIds:
           action === A.VOCABULARY_HELP
-            ? teachingVocabularyCandidates(topic, state.settings.grade, writingPoint, target.text)
+            ? studentParagraphVocabularyCandidates(state.settings.grade, studentParagraph)
             : undefined,
       };
       return {
         activity: TUTOR_ACTIVITY.ESSAY,
-        scopeLabel: target.label,
+        scopeLabel: 'AI老师只看我自己写的这一段。',
         context,
       };
     },

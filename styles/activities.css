@@ -519,6 +519,11 @@
 .guided-steps button { flex: 0 0 auto; min-height: 38px; border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; background: #fff; color: var(--ink); font-size: var(--text-xs); }
 .guided-steps button.active { background: var(--green); color: #fff; border-color: var(--green); }
 .guided-line { min-height: 200px; width: 100%; font-size: 1.12rem; line-height: 2; margin: 8px 0; }
+.guided-editor .ai-toolbar {
+  border-top: 2px solid var(--line);
+  margin-top: 18px;
+  padding-top: 14px;
+}
 .guided-help { display: grid; gap: 12px; align-content: start; }
 .guided-help h3 { margin-top: 0; }
 .hint-card { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 2px; }

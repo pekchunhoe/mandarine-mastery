@@ -19,16 +19,8 @@ const A = TUTOR_ACTION,
 export const tutorActions = Object.freeze({
   [A.SENTENCE_HINT]: {
     label: '💡 给我提示',
-    activities: [B.SENTENCE, B.ESSAY],
-    fields: [
-      'topic',
-      'situation',
-      'studentSentence',
-      'essayTitle',
-      'keyPoints',
-      'currentParagraph',
-      'currentStep',
-    ],
+    activities: [B.SENTENCE],
+    fields: ['topic', 'situation', 'studentSentence'],
   },
   [A.SENTENCE_CHECK]: {
     label: '🔍 检查句子',
@@ -54,45 +46,32 @@ export const tutorActions = Object.freeze({
       {
         label: action === A.PARAGRAPH_EXPAND ? '🌱 帮我扩写' : '✨ 写得更生动',
         activities: [B.ESSAY],
-        fields: [
-          'essayTitle',
-          'keyPoints',
-          'previousParagraphs',
-          'currentParagraph',
-          'currentStep',
-        ],
-        requiredText: 'currentParagraph',
+        fields: ['studentParagraph', 'previousStudentParagraph'],
+        requiredText: 'studentParagraph',
       },
     ]),
   ),
   [A.VOCABULARY_HELP]: {
     label: '📚 推荐好词',
     activities: [B.SENTENCE, B.ESSAY],
-    fields: [
-      'topic',
-      'situation',
-      'studentSentence',
-      'essayTitle',
-      'keyPoints',
-      'currentParagraph',
-      'availableVocabularyIds',
-    ],
+    fields: ['topic', 'situation', 'studentSentence', 'studentParagraph', 'availableVocabularyIds'],
   },
   [A.ESSAY_NEXT_STEP]: {
     label: '➡️ 下一步怎么写？',
     activities: [B.ESSAY],
-    fields: ['essayTitle', 'keyPoints', 'previousParagraphs', 'currentParagraph', 'currentStep'],
+    fields: ['studentParagraph', 'previousStudentParagraph'],
+    requiredText: 'studentParagraph',
   },
   [A.PARAGRAPH_REVIEW]: {
     label: '🔍 检查这一段',
     activities: [B.ESSAY],
-    fields: ['essayTitle', 'keyPoints', 'previousParagraphs', 'currentParagraph', 'currentStep'],
-    requiredText: 'currentParagraph',
+    fields: ['studentParagraph', 'previousStudentParagraph'],
+    requiredText: 'studentParagraph',
   },
   [A.ESSAY_REVIEW]: {
     label: '🩺 作文体检',
     activities: [B.ESSAY],
-    fields: ['essayTitle', 'keyPoints', 'studentEssay'],
+    fields: ['studentEssay'],
     requiredText: 'studentEssay',
   },
 });
@@ -105,7 +84,6 @@ export const activityTutorActions = Object.freeze({
     A.VOCABULARY_HELP,
   ],
   [B.ESSAY]: [
-    A.SENTENCE_HINT,
     A.VOCABULARY_HELP,
     A.PARAGRAPH_EXPAND,
     A.PARAGRAPH_VIVID,
@@ -120,14 +98,12 @@ export const MIN_ESSAY_CHARACTERS = 50;
 export const textLimits = Object.freeze({
   topic: 160,
   situation: 240,
-  essayTitle: 160,
   studentSentence: 500,
-  currentParagraph: 2000,
+  studentParagraph: 2000,
+  previousStudentParagraph: 2000,
   studentEssay: 6000,
 });
 export const arrayLimits = Object.freeze({
-  keyPoints: [8, 240],
-  previousParagraphs: [20, 2000],
   availableVocabularyIds: [16, 120],
 });
 export class TutorInputError extends Error {
@@ -156,13 +132,6 @@ export function tutorRequest(action, activity, raw = {}) {
     invalid();
   const context = {};
   for (const field of spec.fields) {
-    // Do not send sentence fields from an essay, or essay fields from a sentence.
-    if (activity === B.ESSAY && ['topic', 'situation', 'studentSentence'].includes(field)) continue;
-    if (
-      activity === B.SENTENCE &&
-      ['essayTitle', 'keyPoints', 'currentParagraph', 'currentStep'].includes(field)
-    )
-      continue;
     const value = raw[field];
     if (value === undefined) continue;
     if (field in textLimits) {
@@ -178,11 +147,6 @@ export function tutorRequest(action, activity, raw = {}) {
       )
         invalid();
       context[field] = field === 'availableVocabularyIds' ? [...new Set(value)] : [...value];
-      if (
-        field === 'previousParagraphs' &&
-        [A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].includes(action)
-      )
-        context[field] = context[field].slice(-1);
     } else {
       if (!Number.isInteger(value) || value < 1 || value > 100) invalid();
       context[field] = value;
@@ -200,11 +164,15 @@ export function tutorRequest(action, activity, raw = {}) {
       'TEXT_REQUIRED',
       activity === B.SENTENCE
         ? '先写一句话，我才能帮你看看哦。'
-        : [A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].includes(action)
-          ? '先写一句开头，或使用“给我提示”，再来修改这一段。'
-          : action === A.PARAGRAPH_REVIEW
-            ? '先完成这一段，再让我帮你看看。'
-            : '先多写一些内容，再来做作文体检吧。',
+        : action === A.PARAGRAPH_EXPAND
+          ? '先写一句自己的句子，AI老师才能从你的内容继续扩写。'
+          : action === A.PARAGRAPH_VIVID
+            ? '先写一点自己的内容，AI老师才能帮你修改得更生动。'
+            : action === A.PARAGRAPH_REVIEW
+              ? '这一段还没有内容可以检查。'
+              : action === A.ESSAY_NEXT_STEP
+                ? '先写一点自己的内容，AI老师才能和你一起想下一步。'
+                : '先多写一些内容，再来做作文体检吧。',
     );
   }
   if (
@@ -216,7 +184,9 @@ export function tutorRequest(action, activity, raw = {}) {
       '先把事情写得更完整一些（至少 50 字），再来做作文体检吧。',
     );
   }
-  if (action === A.PARAGRAPH_VIVID && countCompositionCharacters(context.currentParagraph) < 6)
+  if (activity === B.ESSAY && action === A.VOCABULARY_HELP && !context.studentParagraph?.trim())
+    throw new TutorInputError('TEXT_REQUIRED', '先写一点自己的内容，AI老师才能推荐合适的好词。');
+  if (action === A.PARAGRAPH_VIVID && countCompositionCharacters(context.studentParagraph) < 6)
     throw new TutorInputError(
       'TEXT_REQUIRED',
       '先把这一段的意思写清楚（至少 6 字），再试着写得更生动。',
@@ -228,7 +198,7 @@ export function localTutorResult(action, context) {
   if (
     action === A.SENTENCE_HINT &&
     !context.studentSentence?.trim() &&
-    !context.currentParagraph?.trim()
+    !context.studentParagraph?.trim()
   ) {
     return {
       thinkingQuestions: ['谁在什么地方？', '发生了什么事？', '你当时有什么感受？'],

@@ -78,7 +78,7 @@ test('required text and invalid context rejected', async () => {
       request({ ...body(), context: { studentEssay } }),
       typeof studentEssay === 'string' ? 'TEXT_REQUIRED' : 'INVALID_REQUEST',
     );
-  for (const context of [[], null, { currentStep: 0 }, { essayTitle: 5 }]) {
+  for (const context of [[], null, { studentParagraph: 8 }, { previousStudentParagraph: 5 }]) {
     await failure(request({ ...body(A.ESSAY_NEXT_STEP), context }), 'INVALID_REQUEST');
   }
 });
@@ -279,10 +279,14 @@ test('upstream diagnostics classify typed SDK metadata without logging content',
   assert.equal(logs[0][1].upstreamCode, 'PERMISSION_DENIED');
   assert.ok(!JSON.stringify(logs).includes(env.GEMINI_API_KEY));
   assert.ok(!JSON.stringify(logs).includes('private writing'));
-  assert.deepEqual(
-    [400, 401, 403, 404, 429, 500].map(upstreamStatusCategory),
-    ['invalid_request', 'authentication', 'permission_denied', 'not_found', 'rate_limited', 'unavailable'],
-  );
+  assert.deepEqual([400, 401, 403, 404, 429, 500].map(upstreamStatusCategory), [
+    'invalid_request',
+    'authentication',
+    'permission_denied',
+    'not_found',
+    'rate_limited',
+    'unavailable',
+  ]);
 });
 test('secret in otherwise valid output is never returned', async () =>
   failure(request(), 'AI_INVALID_RESPONSE', 502, {
@@ -363,10 +367,7 @@ test('installed SDK sends correct Interactions schema, server prompt and statele
     assert.match(request.url, /\/interactions/);
     assert.equal(sent.model, DEFAULT_FAST_MODEL);
     assert.equal(sent.store, false);
-    assert.deepEqual(
-      sent.generation_config,
-      buildGenerationConfig({ action: A.SENTENCE_HINT }),
-    );
+    assert.deepEqual(sent.generation_config, buildGenerationConfig({ action: A.SENTENCE_HINT }));
     assert.ok(!Object.hasOwn(sent.generation_config, 'thinking_config'));
     assert.ok(!Object.hasOwn(sent.generation_config, 'thinking_level'));
     assert.deepEqual(sent.response_format.schema, actions[A.SENTENCE_HINT].schema);
@@ -389,10 +390,7 @@ test('installed SDK sends correct Interactions schema, server prompt and statele
 });
 test('generation config keeps compact caps, with minimal thinking only for advanced reviews', () => {
   for (const action of Object.values(A))
-    assert.equal(
-      buildGenerationConfig({ action }).max_output_tokens,
-      OUTPUT_TOKEN_CAPS[action],
-    );
+    assert.equal(buildGenerationConfig({ action }).max_output_tokens, OUTPUT_TOKEN_CAPS[action]);
   assert.deepEqual(buildGenerationConfig({ action: A.SENTENCE_HINT }), { max_output_tokens: 320 });
   for (const action of [A.PARAGRAPH_REVIEW, A.ESSAY_REVIEW])
     assert.deepEqual(buildGenerationConfig({ action }), {
@@ -436,7 +434,7 @@ test('advanced SDK completion logs only bounded interaction usage metadata', asy
   });
   assert.equal(typeof logs[1][1].durationMs, 'number');
   const logged = JSON.stringify(logs);
-  for (const privateText of [input.context.currentParagraph, env.GEMINI_API_KEY])
+  for (const privateText of [input.context.studentParagraph, env.GEMINI_API_KEY])
     assert.ok(!logged.includes(privateText));
 });
 test('incomplete advanced SDK response is classified and logged without raw output', async (t) => {
@@ -462,7 +460,11 @@ test('incomplete advanced SDK response is classified and logged without raw outp
   assert.equal(warnings[0][1].total_thought_tokens, 900);
   assert.equal(warnings[0][1].total_output_tokens, 1200);
   const logged = JSON.stringify(warnings);
-  for (const privateText of [input.context.currentParagraph, env.GEMINI_API_KEY, 'truncated provider output'])
+  for (const privateText of [
+    input.context.studentParagraph,
+    env.GEMINI_API_KEY,
+    'truncated provider output',
+  ])
     assert.ok(!logged.includes(privateText));
 });
 test('malformed advanced SDK JSON keeps validation and raw-output protection', async (t) => {
@@ -486,7 +488,7 @@ test('malformed advanced SDK JSON keeps validation and raw-output protection', a
   assert.equal(warnings[0][1].status, 'malformed_response');
   assert.equal(warnings[0][1].total_output_tokens, 1200);
   const logged = JSON.stringify(warnings);
-  for (const privateText of [input.context.currentParagraph, 'malformed provider output'])
+  for (const privateText of [input.context.studentParagraph, 'malformed provider output'])
     assert.ok(!logged.includes(privateText));
 });
 test('SDK safety refusal yields neutral controlled error', async (t) => {
