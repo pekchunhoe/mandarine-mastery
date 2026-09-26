@@ -27,7 +27,13 @@ export function malformedResults(valid) {
   ];
 }
 export function inputFor(action) {
-  const activity = [A.ESSAY_NEXT_STEP, A.PARAGRAPH_REVIEW, A.ESSAY_REVIEW].includes(action)
+  const activity = [
+    A.PARAGRAPH_EXPAND,
+    A.PARAGRAPH_VIVID,
+    A.ESSAY_NEXT_STEP,
+    A.PARAGRAPH_REVIEW,
+    A.ESSAY_REVIEW,
+  ].includes(action)
     ? B.ESSAY
     : B.SENTENCE;
   return {
@@ -86,13 +92,25 @@ export function resultFor(action, context = {}, vocabulary = word, resolved = fa
       tryYourself: '小明____，____。',
       studentTask,
     },
+    ...Object.fromEntries(
+      [A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].map((action) => [
+        action,
+        {
+          suggestions: [{ focus: '动作描写', suggestion: '补充当时的动作和反应。' }],
+          example: '我紧紧握住接力棒，听到同学的加油声，____。',
+          explanation: '具体的动作可以让读者想象当时的情景。',
+          studentTask,
+        },
+      ]),
+    ),
     [A.VOCABULARY_HELP]: {
+      ...(!resolved ? { supplementalVocabulary: [] } : {}),
       recommendations: [
         {
           vocabularyId: vocabulary.id,
           reason: '适合描写比赛时努力向前的动作。',
           exampleUsage: '他奋力向终点跑去。',
-          ...(resolved ? { vocabulary } : {}),
+          ...(resolved ? { vocabulary, source: 'library' } : {}),
         },
       ],
       studentTask,

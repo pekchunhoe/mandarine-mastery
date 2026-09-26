@@ -11,12 +11,9 @@ import {
   normalizeResult,
   validateTeachingResult,
 } from './ai-contract.js';
-import {
-  TIMEOUT_MS,
-  generateTeachingResult,
-  selectGeminiModel,
-} from './gemini.js';
+import { TIMEOUT_MS, generateTeachingResult, selectGeminiModel } from './gemini.js';
 import { clientRateLimit, createTutorLimiter } from './ai-rate-limit.js';
+import { resolveVocabularyResult } from './ai-vocabulary.js';
 
 let library;
 async function getVocabulary() {
@@ -62,17 +59,6 @@ async function readBody(request) {
     reader.releaseLock();
   }
 }
-// Only trusted library fields cross back to the browser, never AI-supplied definitions.
-const trustedWord = ({
-  id,
-  word,
-  pinyin,
-  definitionChinese,
-  generatedSynonyms,
-  synonyms,
-  exampleSentence,
-}) => ({ id, word, pinyin, definitionChinese, generatedSynonyms, synonyms, exampleSentence });
-
 const safeUpstreamCode = (value) =>
   typeof value === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(value) ? value : undefined;
 
@@ -136,7 +122,7 @@ export function createTeacherHandler({
       ({ model, routeClass } = selectGeminiModel(action, env));
       const candidates =
         input.action === A.VOCABULARY_HELP ? input.context.availableVocabularyIds || [] : [];
-      const store = candidates.length ? await vocabulary() : null;
+      const store = input.action === A.VOCABULARY_HELP ? await vocabulary() : null;
       const records = candidates.map((id) => store.getWordById(id)).filter(Boolean);
       input.vocabularyCandidates = records.map(({ id, word, definitionChinese }) => ({
         id,
@@ -144,12 +130,8 @@ export function createTeacherHandler({
         definitionChinese,
       }));
       delete input.context.availableVocabularyIds;
-      if (input.action === A.VOCABULARY_HELP && !records.length) {
-        data = {
-          recommendations: [],
-          studentTask: '打开词语库，找一个合适的词，自己试着写一句话。',
-        };
-      } else {
+      let cacheable = true;
+      {
         startedAt = now();
         logger.info?.('AI teacher request started', {
           action,
@@ -185,26 +167,18 @@ export function createTeacherHandler({
         if (typeof raw !== 'string' || raw.length > MAX_OUTPUT)
           throw new TeacherError('AI_INVALID_RESPONSE', 502);
         try {
-          data = validateTeachingResult(
-            input.action,
-            normalizeResult(JSON.parse(raw), actions[input.action].schema),
-            input.context,
-          );
+          if (input.action === A.VOCABULARY_HELP) {
+            ({ data, cacheable } = resolveVocabularyResult(JSON.parse(raw), records, store));
+          } else
+            data = validateTeachingResult(
+              input.action,
+              normalizeResult(JSON.parse(raw), actions[input.action].schema),
+              input.context,
+            );
         } catch (error) {
           if (error instanceof TeacherError) throw error;
           throw new TeacherError('AI_INVALID_RESPONSE', 502);
         }
-      }
-      if (input.action === A.VOCABULARY_HELP) {
-        const allowed = new Map(records.map((word) => [word.id, word]));
-        const seen = new Set();
-        data.recommendations = data.recommendations
-          .filter((item) => {
-            if (!allowed.has(item.vocabularyId) || seen.has(item.vocabularyId)) return false;
-            seen.add(item.vocabularyId);
-            return true;
-          })
-          .map((item) => ({ ...item, vocabulary: trustedWord(allowed.get(item.vocabularyId)) }));
       }
       if (JSON.stringify(data).includes(apiKey)) throw new TeacherError('AI_INVALID_RESPONSE', 502);
       if (startedAt !== undefined)
@@ -216,7 +190,12 @@ export function createTeacherHandler({
           status: 'success',
           ...interactionDiagnostic,
         });
-      return reply({ ok: true, action: input.action, data });
+      return reply({
+        ok: true,
+        action: input.action,
+        data,
+        ...(cacheable ? {} : { cacheable: false }),
+      });
     } catch (error) {
       let code = error instanceof TeacherError ? error.code : 'AI_UNAVAILABLE';
       let status = error instanceof TeacherError ? error.status : 503;
@@ -235,19 +214,20 @@ export function createTeacherHandler({
         status = 504;
       }
       if (startedAt !== undefined) {
-        const logStatus =
-          ['incomplete', 'budget_exceeded'].includes(interactionDiagnostic?.interactionStatus)
-            ? 'incomplete_response'
-            : upstreamStatusCategory(upstreamStatus) ||
-          {
-            AI_TIMEOUT: 'timeout',
-            AI_UNAVAILABLE: 'unavailable',
-            AI_RATE_LIMIT: 'rate_limited',
-            AI_REFUSAL: 'safety',
-            AI_INVALID_RESPONSE: 'malformed_response',
-            AI_CANCELLED: 'cancelled',
-          }[code] ||
-          'unavailable';
+        const logStatus = ['incomplete', 'budget_exceeded'].includes(
+          interactionDiagnostic?.interactionStatus,
+        )
+          ? 'incomplete_response'
+          : upstreamStatusCategory(upstreamStatus) ||
+            {
+              AI_TIMEOUT: 'timeout',
+              AI_UNAVAILABLE: 'unavailable',
+              AI_RATE_LIMIT: 'rate_limited',
+              AI_REFUSAL: 'safety',
+              AI_INVALID_RESPONSE: 'malformed_response',
+              AI_CANCELLED: 'cancelled',
+            }[code] ||
+            'unavailable';
         logger.warn?.('AI teacher request failed', {
           action,
           routeClass,

@@ -228,6 +228,8 @@ export function guidedEssayWriting(root, ctx) {
     const paragraphActions = [
       A.SENTENCE_HINT,
       A.VOCABULARY_HELP,
+      A.PARAGRAPH_EXPAND,
+      A.PARAGRAPH_VIVID,
       A.ESSAY_NEXT_STEP,
       A.PARAGRAPH_REVIEW,
     ];

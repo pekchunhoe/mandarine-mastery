@@ -23,7 +23,7 @@ test('client does not serialize unrelated state and only uses same-origin endpoi
     return Response.json({
       ok: true,
       action: A.SENTENCE_HINT,
-      data: { thinkingQuestions: ['想一想'] },
+      data: { thinkingQuestions: ['想一想'], usefulPatterns: [], studentTask: '自己写一句。' },
     });
   });
   await requestTeaching(A.SENTENCE_HINT, {
@@ -69,7 +69,7 @@ test('client caches only identical successful requests for five minutes', async 
     return Response.json({
       ok: true,
       action: A.SENTENCE_HINT,
-      data: { thinkingQuestions: ['想一想'] },
+      data: { thinkingQuestions: ['想一想'], usefulPatterns: [], studentTask: '自己写一句。' },
     });
   });
   const payload = {
@@ -80,6 +80,8 @@ test('client caches only identical successful requests for five minutes', async 
   first.thinkingQuestions[0] = 'changed outside the cache';
   assert.deepEqual(await requestTeaching(A.SENTENCE_HINT, payload), {
     thinkingQuestions: ['想一想'],
+    usefulPatterns: [],
+    studentTask: '自己写一句。',
   });
   await requestTeaching(A.SENTENCE_HINT, {
     ...payload,

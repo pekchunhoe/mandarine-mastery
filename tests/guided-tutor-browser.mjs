@@ -56,6 +56,123 @@ const clickAI = (page, action) => page.locator(`[data-ai-action="${action}"]`).c
 const close = (page) => page.locator('#modal [data-close-modal]').click();
 const done = (page) =>
   page.locator('.ai-result[aria-busy="false"] h3').filter({ hasText: '轮到你了' }).waitFor();
+
+for (const mode of ['free', 'blocks', 'paragraph'])
+  test(`hybrid vocabulary reaches shared server and speech cards from ${mode}`, async (t) => {
+    const page = await fixture(t, mode === 'paragraph' ? B.ESSAY : B.SENTENCE);
+    if (mode === 'free') await sentenceSetup(page);
+    if (mode === 'paragraph')
+      await page.locator('#guided-line').fill('我躲在大树后面，听见脚步声越来越近。');
+    if (mode === 'blocks') {
+      const record = records.find((item) => builders[item.word]);
+      await page.goto(base + '#activity/builder?word=' + encodeURIComponent(record.id));
+      await page.locator('[data-part]').first().waitFor();
+      for (const key of ['when', 'who', 'event', 'action'])
+        await page.locator(`[data-part="${key}:0"]`).click();
+    }
+    const handler = createTeacherHandler({
+      env: { GEMINI_API_KEY: 'fake-test-only' },
+      logger: {},
+      vocabulary: async () => ({
+        getWordById: (id) => records.find((word) => word.id === id),
+        getAllWords: () => records,
+      }),
+      generate: async (input, options) => {
+        assert.equal(options.model, 'gemini-3.5-flash-lite');
+        const candidate = input.vocabularyCandidates[0];
+        return JSON.stringify({
+          recommendations: candidate
+            ? [
+                {
+                  vocabularyId: candidate.id,
+                  reason: '可以帮助描写当前情景。',
+                  exampleUsage: '先想想这个词适合哪个动作。',
+                },
+              ]
+            : [],
+          supplementalVocabulary: [
+            {
+              word: '心怦怦直跳',
+              pinyin: 'xīn pēng pēng zhí tiào',
+              definitionChinese: '心跳很快，形容紧张的心情。',
+              exampleSentence: '脚步声越来越近，我的心怦怦直跳。',
+              reason: '可以写出躲藏时的心情。',
+            },
+          ],
+          studentTask: '选择一个词，自己写一句话。',
+        });
+      },
+    });
+    await page.route('**/api/gemini', async (route) => {
+      const response = await handler(
+        new Request('http://localhost/api/gemini', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: route.request().postData(),
+        }),
+      );
+      await route.fulfill({ status: response.status, json: await response.json() });
+    });
+    await clickAI(page, A.VOCABULARY_HELP);
+    await done(page);
+    assert.ok((await page.locator('.word-card').count()) >= 2);
+    assert.match(await page.locator('.ai-result').textContent(), /AI推荐/);
+    await page.locator('[data-speak="心怦怦直跳"]').click();
+    await close(page);
+  });
+
+test('forest paragraph expansion and vivid tools use P2, copy safely and change cache with active paragraph', async (t) => {
+  const page = await fixture(t, B.ESSAY);
+  await page.locator('[data-training-filter="grade"]').selectOption('');
+  const topic = await page
+    .locator('#training-topic option')
+    .evaluateAll(
+      (options) => options.find((option) => option.textContent.includes('一次难忘的经历')).value,
+    );
+  await page.locator('#training-topic').selectOption(topic);
+  const forest = [
+    '星期六早上，我和弟弟到森林里散步。',
+    '我们走到树林深处时，突然听见一阵奇怪的声音。我马上躲到大树后面。',
+    '后来我们发现，原来是一只小猫躲在草丛里。',
+  ];
+  for (let index = 0; index < 3; index++) {
+    await page.locator(`[data-guided-paragraph="${index}"]`).click();
+    await page.locator('#guided-line').fill(forest[index]);
+  }
+  await page.locator('[data-guided-paragraph="1"]').click();
+  const sent = await mockTutor(page);
+  const before = await essayState(page);
+  for (const action of [A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID]) {
+    await clickAI(page, action);
+    await done(page);
+    const input = sent.at(-1);
+    assert.equal(input.context.currentParagraph, forest[1]);
+    assert.deepEqual(input.context.previousParagraphs, [forest[0]]);
+    assert.ok(input.context.essayTitle && input.context.keyPoints.length);
+    assert.ok(!JSON.stringify(input).includes(forest[2]));
+    await page.evaluate(() => {
+      navigator.clipboard.writeText = async (text) => {
+        window.copiedSuggestion = text;
+      };
+    });
+    await page.locator('[data-ai-copy]').click();
+    assert.equal(await page.evaluate(() => window.copiedSuggestion), resultFor(action).example);
+    await close(page);
+    assert.deepEqual(await essayState(page), before);
+    const count = sent.length;
+    await clickAI(page, action);
+    await done(page);
+    await close(page);
+    assert.equal(sent.length, count);
+    await page.locator('[data-guided-paragraph="2"]').click();
+    await clickAI(page, action);
+    await done(page);
+    await close(page);
+    assert.equal(sent.length, count + 1);
+    assert.equal(sent.at(-1).context.currentParagraph, forest[2]);
+    await page.locator('[data-guided-paragraph="1"]').click();
+  }
+});
 async function sentenceSetup(page) {
   await page.locator('#sentence-context').selectOption('你自己想到的情境');
   await page.locator('#custom-sentence-context').fill('运动会');
@@ -219,6 +336,8 @@ test('three-paragraph essay: paragraph tools stay beside paragraph 2 and send on
   const paragraphActions = [
     A.SENTENCE_HINT,
     A.VOCABULARY_HELP,
+    A.PARAGRAPH_EXPAND,
+    A.PARAGRAPH_VIVID,
     A.ESSAY_NEXT_STEP,
     A.PARAGRAPH_REVIEW,
   ];
@@ -253,8 +372,17 @@ test('three-paragraph essay: paragraph tools stay beside paragraph 2 and send on
       assert.deepEqual(input.context.previousParagraphs, [paragraphs[0]]);
       assert.match(await page.locator('.ai-result').textContent(), /比赛的开始和经过/);
     }
-    if (action === A.PARAGRAPH_REVIEW) {
+    if ([A.PARAGRAPH_REVIEW, A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].includes(action)) {
       assert.deepEqual(input.context.previousParagraphs, [paragraphs[0]]);
+    }
+    if ([A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].includes(action)) {
+      await page.evaluate(() => {
+        navigator.clipboard.writeText = async (text) => {
+          window.copiedSuggestion = text;
+        };
+      });
+      await page.locator('[data-ai-copy]').click();
+      assert.equal(await page.evaluate(() => window.copiedSuggestion), resultFor(action).example);
     }
     await close(page);
     assert.deepEqual(await essayState(page), before);
@@ -356,6 +484,8 @@ for (const action of [A.SENTENCE_CHECK, A.PARAGRAPH_REVIEW])
     const state = activity === B.SENTENCE ? sentenceState : essayState;
     const before = await state(page);
     for (const [name, raw] of malformedResults(resultFor(action))) {
+      // Each malformed fixture must reach the server, independent of the previous successful retry.
+      await page.evaluate(async () => (await import('/js/ai-teacher.js')).clearTeachingCache());
       let calls = 0,
         providerCalls = 0;
       const endpoint = createTeacherHandler({
@@ -638,5 +768,58 @@ for (const [width, height] of [
     await close(page);
     assert.equal(await page.locator('#own-sentence').inputValue(), sentence);
     assert.equal(await page.locator('#custom-sentence-context').inputValue(), '运动会');
+  });
+  test(`paragraph expansion, vivid and hybrid dialogs fit ${width}x${height}`, async (t) => {
+    const page = await fixture(t, B.ESSAY, { width, height });
+    await page.locator('#guided-line').fill('我躲在大树后面，听见脚步声越来越近。');
+    await mockTutor(page, (input, data) =>
+      input.action === A.VOCABULARY_HELP
+        ? {
+            ...data,
+            recommendations: [
+              ...data.recommendations,
+              {
+                source: 'ai',
+                reason: '适合描写紧张的心情。',
+                exampleUsage: '我躲在树后，屏住呼吸。',
+                vocabulary: {
+                  word: '屏住呼吸',
+                  pinyin: 'bǐng zhù hū xī',
+                  definitionChinese: '暂时不呼吸，不发出声音。',
+                  exampleSentence: '我躲在树后，屏住呼吸。',
+                },
+              },
+            ],
+          }
+        : data,
+    );
+    const before = await essayState(page);
+    assert.equal(await page.locator('.guided-editor [data-ai-action]').count(), 6);
+    assert.equal(await page.locator('.complete-essay [data-ai-action]').count(), 1);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await page.locator('.guided-editor .ai-toolbar').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `test-results/tutor/paragraph-toolbar-${width}.png` });
+    for (const action of [A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID, A.VOCABULARY_HELP]) {
+      await clickAI(page, action);
+      await done(page);
+      assert.ok(
+        await page.locator('#modal').evaluate((el) => {
+          const rect = el.getBoundingClientRect();
+          return (
+            el.scrollWidth <= el.clientWidth &&
+            rect.x >= 0 &&
+            rect.right <= innerWidth &&
+            rect.y >= 0 &&
+            rect.bottom <= innerHeight
+          );
+        }),
+      );
+      if (action === A.PARAGRAPH_VIVID)
+        await page.screenshot({ path: `test-results/tutor/paragraph-dialog-${width}.png` });
+      await page.setViewportSize({ width: height, height: width });
+      await close(page);
+      assert.deepEqual(await essayState(page), before);
+      await page.setViewportSize({ width, height });
+    }
   });
 }

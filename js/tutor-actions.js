@@ -6,6 +6,8 @@ export const TUTOR_ACTION = Object.freeze({
   SENTENCE_CHECK: 'sentence_check',
   SENTENCE_EXPAND: 'sentence_expand',
   SENTENCE_VIVID: 'sentence_vivid',
+  PARAGRAPH_EXPAND: 'paragraph_expand',
+  PARAGRAPH_VIVID: 'paragraph_vivid',
   VOCABULARY_HELP: 'vocabulary_help',
   ESSAY_NEXT_STEP: 'essay_next_step',
   PARAGRAPH_REVIEW: 'paragraph_review',
@@ -46,6 +48,23 @@ export const tutorActions = Object.freeze({
     fields: ['topic', 'situation', 'studentSentence'],
     requiredText: 'studentSentence',
   },
+  ...Object.fromEntries(
+    [A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].map((action) => [
+      action,
+      {
+        label: action === A.PARAGRAPH_EXPAND ? '🌱 帮我扩写' : '✨ 写得更生动',
+        activities: [B.ESSAY],
+        fields: [
+          'essayTitle',
+          'keyPoints',
+          'previousParagraphs',
+          'currentParagraph',
+          'currentStep',
+        ],
+        requiredText: 'currentParagraph',
+      },
+    ]),
+  ),
   [A.VOCABULARY_HELP]: {
     label: '📚 推荐好词',
     activities: [B.SENTENCE, B.ESSAY],
@@ -88,6 +107,8 @@ export const activityTutorActions = Object.freeze({
   [B.ESSAY]: [
     A.SENTENCE_HINT,
     A.VOCABULARY_HELP,
+    A.PARAGRAPH_EXPAND,
+    A.PARAGRAPH_VIVID,
     A.ESSAY_NEXT_STEP,
     A.PARAGRAPH_REVIEW,
     A.ESSAY_REVIEW,
@@ -157,6 +178,11 @@ export function tutorRequest(action, activity, raw = {}) {
       )
         invalid();
       context[field] = field === 'availableVocabularyIds' ? [...new Set(value)] : [...value];
+      if (
+        field === 'previousParagraphs' &&
+        [A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].includes(action)
+      )
+        context[field] = context[field].slice(-1);
     } else {
       if (!Number.isInteger(value) || value < 1 || value > 100) invalid();
       context[field] = value;
@@ -174,9 +200,11 @@ export function tutorRequest(action, activity, raw = {}) {
       'TEXT_REQUIRED',
       activity === B.SENTENCE
         ? '先写一句话，我才能帮你看看哦。'
-        : action === A.PARAGRAPH_REVIEW
-          ? '先完成这一段，再让我帮你看看。'
-          : '先多写一些内容，再来做作文体检吧。',
+        : [A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].includes(action)
+          ? '先写一句开头，或使用“给我提示”，再来修改这一段。'
+          : action === A.PARAGRAPH_REVIEW
+            ? '先完成这一段，再让我帮你看看。'
+            : '先多写一些内容，再来做作文体检吧。',
     );
   }
   if (
@@ -188,6 +216,11 @@ export function tutorRequest(action, activity, raw = {}) {
       '先把事情写得更完整一些（至少 50 字），再来做作文体检吧。',
     );
   }
+  if (action === A.PARAGRAPH_VIVID && countCompositionCharacters(context.currentParagraph) < 6)
+    throw new TutorInputError(
+      'TEXT_REQUIRED',
+      '先把这一段的意思写清楚（至少 6 字），再试着写得更生动。',
+    );
   return { action, activity, context };
 }
 
@@ -203,16 +236,13 @@ export function localTutorResult(action, context) {
       studentTask: '想一想当前的题目或情境，选择一个问题，先自己写一句话。',
     };
   }
-  if (action === A.VOCABULARY_HELP && !context.availableVocabularyIds?.length) {
-    return { recommendations: [], studentTask: '打开词语库，找一个符合情境的词，自己写一句话。' };
-  }
   return null;
 }
 
 export const tutorLoading = (action) =>
   action === A.ESSAY_REVIEW
     ? 'AI老师正在看看你的作文……'
-    : action === A.PARAGRAPH_REVIEW
+    : [A.PARAGRAPH_REVIEW, A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].includes(action)
       ? '正在分析这一段……'
       : action === A.ESSAY_NEXT_STEP
         ? 'AI老师正在看看你写到哪里了……'

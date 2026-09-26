@@ -11,6 +11,7 @@ import { vocabularyDetails } from './vocabulary-details.js';
 import { showModal, closeModal } from './modal.js';
 import { openVocabularyDialog } from './vocabulary-dialog.js';
 import { refreshSpeech } from '../js/speech-service.js';
+import { copyText } from '../js/clipboard.js';
 
 // A workflow may expose only the actions that make sense at its current scope.
 // Guided essay writing uses this to keep paragraph tools beside the paragraph editor.
@@ -95,18 +96,34 @@ export function tutorResultHTML(action, data) {
     html +=
       section('✨ 示范', paragraph(data.example)) +
       section('试着自己填一填', paragraph(data.tryYourself));
+  } else if ([A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].includes(action)) {
+    html += section(
+      '💡 改进建议',
+      data.suggestions.map((item) => article(item.focus, paragraph(item.suggestion))).join(''),
+    );
+    html += section(
+      '参考写法（请自己决定怎样修改）',
+      paragraph(data.example) +
+        why(data.explanation) +
+        '<button type="button" class="btn" data-ai-copy>复制参考写法</button>',
+    );
   } else if (action === A.VOCABULARY_HELP) {
     html += section(
       '📚 好词推荐',
       data.recommendations
         .map((item) => {
           const word = item.vocabulary;
-          if (!word || word.id !== item.vocabularyId)
+          if (
+            !word ||
+            (item.source !== 'ai' && (!item.vocabularyId || word.id !== item.vocabularyId))
+          )
             throw new Error('Invalid vocabulary response');
           return (
             '<article class="word-card"><h4>' +
             e(word.word) +
-            '</h4>' +
+            '</h4><span class="small muted">' +
+            (item.source === 'ai' ? 'AI推荐' : '词库') +
+            '</span>' +
             vocabularyDetails(word) +
             paragraph('AI用法提示：' + item.reason) +
             paragraph('AI例句：' + item.exampleUsage) +
@@ -237,6 +254,17 @@ export function attachAITeacher(root, { signal, getRequest }) {
         const data = await aiTeacher[action](request, { signal: controller.signal });
         if (!current()) return;
         content.innerHTML = tutorResultHTML(action, data);
+        const copy = content.querySelector('[data-ai-copy]');
+        if (copy)
+          copy.onclick = async () => {
+            const copied = await copyText(data.example);
+            if (current())
+              toast(
+                copied
+                  ? '参考写法已复制，请自己决定怎样修改'
+                  : '未能复制，请长按参考写法选择文字复制',
+              );
+          };
         refreshSpeech(modal);
       } catch (error) {
         if (!current()) return;
