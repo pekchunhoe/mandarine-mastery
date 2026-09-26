@@ -225,6 +225,7 @@ export function guidedEssayWriting(root, ctx) {
         ? `<section class="hint-card example-hint"><h4>范句（参考后请用自己的内容写）</h4><p class="example-hint-text">${e(referenceParagraph)}</p></section>`
         : '';
     const paragraphActions = [
+      A.PARAGRAPH_HINT,
       A.VOCABULARY_HELP,
       A.PARAGRAPH_EXPAND,
       A.PARAGRAPH_VIVID,
@@ -257,6 +258,22 @@ export function guidedEssayWriting(root, ctx) {
       const lines = draft.lines.map((line, index) =>
         index === activeParagraph && editor ? editor.value : line,
       );
+      if (action === A.PARAGRAPH_HINT)
+        return {
+          activity: TUTOR_ACTIVITY.ESSAY,
+          scopeLabel: '根据所选题目和你自己写的故事给提示；不读取要点、提示或范句。',
+          context: {
+            selectedTitle: topic.title,
+            paragraphStage:
+              activeParagraph === 0
+                ? 'opening'
+                : activeParagraph === lines.length - 1
+                  ? 'ending'
+                  : 'result',
+            currentStudentParagraph: lines[activeParagraph],
+            previousStudentParagraphs: lines.slice(0, activeParagraph),
+          },
+        };
       if (action === A.ESSAY_REVIEW)
         return {
           activity: TUTOR_ACTIVITY.ESSAY,

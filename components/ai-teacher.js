@@ -37,7 +37,10 @@ export const aiToolbar = (
     .join('') +
   '</div><p class="small muted">' +
   (activity === TUTOR_ACTIVITY.ESSAY
-    ? 'AI老师只会阅读你自己写下的内容；提示和范句不会提交。请勿填写个人资料；由你来决定怎样修改。'
+    ? (actions.includes(A.PARAGRAPH_HINT)
+        ? '“给我提示”会参考所选题目和你已写的故事；其他按钮只看你写的内容。'
+        : 'AI老师只会阅读你自己写下的内容。') +
+      '本地提示和范句不会提交。请勿填写个人资料；由你来决定怎样修改。'
     : '点击后会提交相关写作内容取得建议。请勿填写个人资料；由你来决定怎样修改。') +
   '</p></section>';
 const list = (items) => '<ul>' + items.map((item) => '<li>' + e(item) + '</li>').join('') + '</ul>';
@@ -64,6 +67,12 @@ const issueNames = {
 };
 export function tutorResultHTML(action, data) {
   let html = '';
+  if (action === A.PARAGRAPH_HINT)
+    return (
+      section('💡 可以写什么', list(data.ideas)) +
+      section('✏️ 参考写法', list(data.examples)) +
+      section('🎯 小提醒', paragraph(data.studentTask))
+    );
   if (data.original !== undefined) html += section('你的原句', paragraph(data.original));
   if (action === A.SENTENCE_HINT) {
     html += section('💡 想一想', list(data.thinkingQuestions));

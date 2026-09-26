@@ -3,6 +3,7 @@ import { countCompositionCharacters } from './writing-checks.js';
 
 export const TUTOR_ACTION = Object.freeze({
   SENTENCE_HINT: 'sentence_hint',
+  PARAGRAPH_HINT: 'paragraph_hint',
   SENTENCE_CHECK: 'sentence_check',
   SENTENCE_EXPAND: 'sentence_expand',
   SENTENCE_VIVID: 'sentence_vivid',
@@ -17,6 +18,16 @@ export const TUTOR_ACTIVITY = Object.freeze({ SENTENCE: 'sentenceBuilder', ESSAY
 const A = TUTOR_ACTION,
   B = TUTOR_ACTIVITY;
 export const tutorActions = Object.freeze({
+  [A.PARAGRAPH_HINT]: {
+    label: '💡 给我提示',
+    activities: [B.ESSAY],
+    fields: [
+      'selectedTitle',
+      'paragraphStage',
+      'currentStudentParagraph',
+      'previousStudentParagraphs',
+    ],
+  },
   [A.SENTENCE_HINT]: {
     label: '💡 给我提示',
     activities: [B.SENTENCE],
@@ -84,6 +95,7 @@ export const activityTutorActions = Object.freeze({
     A.VOCABULARY_HELP,
   ],
   [B.ESSAY]: [
+    A.PARAGRAPH_HINT,
     A.VOCABULARY_HELP,
     A.PARAGRAPH_EXPAND,
     A.PARAGRAPH_VIVID,
@@ -96,6 +108,9 @@ export const MAX_BODY = 32768;
 export const MAX_CONTEXT_TEXT = 8000;
 export const MIN_ESSAY_CHARACTERS = 50;
 export const textLimits = Object.freeze({
+  selectedTitle: 160,
+  paragraphStage: 16,
+  currentStudentParagraph: 2000,
   topic: 160,
   situation: 240,
   studentSentence: 500,
@@ -104,6 +119,7 @@ export const textLimits = Object.freeze({
   studentEssay: 6000,
 });
 export const arrayLimits = Object.freeze({
+  previousStudentParagraphs: [20, 2000],
   availableVocabularyIds: [16, 120],
 });
 export class TutorInputError extends Error {
@@ -159,6 +175,29 @@ export function tutorRequest(action, activity, raw = {}) {
     0,
   );
   if (size > MAX_CONTEXT_TEXT) tooLong();
+  if (action === A.PARAGRAPH_HINT) {
+    const { selectedTitle, paragraphStage, previousStudentParagraphs } = context;
+    if (
+      !['opening', 'result', 'ending'].includes(paragraphStage) ||
+      !Array.isArray(previousStudentParagraphs)
+    )
+      invalid();
+    if (!selectedTitle?.trim())
+      throw new TutorInputError('TEXT_REQUIRED', '先选一个作文题目，再请AI老师给你提示。');
+    if (paragraphStage === 'opening' && previousStudentParagraphs.length !== 0) invalid();
+    const required = paragraphStage === 'opening' ? 0 : paragraphStage === 'result' ? 1 : 2;
+    if (
+      previousStudentParagraphs.length < required ||
+      previousStudentParagraphs.some((text) => countCompositionCharacters(text) === 0)
+    )
+      throw new TutorInputError(
+        'TEXT_REQUIRED',
+        paragraphStage === 'result'
+          ? '先完成开头，AI老师才能根据你的故事提示下一段。'
+          : '先写好开头和前面的经过、结果，AI老师才能根据你的故事提示结尾。',
+      );
+    context.currentStudentParagraph ??= '';
+  }
   if (spec.requiredText && !context[spec.requiredText]?.trim()) {
     throw new TutorInputError(
       'TEXT_REQUIRED',
@@ -210,12 +249,14 @@ export function localTutorResult(action, context) {
 }
 
 export const tutorLoading = (action) =>
-  action === A.ESSAY_REVIEW
-    ? 'AI老师正在看看你的作文……'
-    : [A.PARAGRAPH_REVIEW, A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].includes(action)
-      ? '正在分析这一段……'
-      : action === A.ESSAY_NEXT_STEP
-        ? 'AI老师正在看看你写到哪里了……'
-        : action === A.VOCABULARY_HELP
-          ? 'AI老师正在挑选合适的好词……'
-          : 'AI老师正在看看你的句子……';
+  action === A.PARAGRAPH_HINT
+    ? 'AI老师正在根据题目和你的故事想提示……'
+    : action === A.ESSAY_REVIEW
+      ? 'AI老师正在看看你的作文……'
+      : [A.PARAGRAPH_REVIEW, A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].includes(action)
+        ? '正在分析这一段……'
+        : action === A.ESSAY_NEXT_STEP
+          ? 'AI老师正在看看你写到哪里了……'
+          : action === A.VOCABULARY_HELP
+            ? 'AI老师正在挑选合适的好词……'
+            : 'AI老师正在看看你的句子……';

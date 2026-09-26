@@ -27,6 +27,17 @@ export function malformedResults(valid) {
   ];
 }
 export function inputFor(action) {
+  if (action === A.PARAGRAPH_HINT)
+    return {
+      action,
+      activity: B.ESSAY,
+      context: {
+        selectedTitle: '运动会',
+        paragraphStage: 'ending',
+        currentStudentParagraph: paragraphs[2],
+        previousStudentParagraphs: paragraphs.slice(0, 2),
+      },
+    };
   const activity = [
     A.PARAGRAPH_EXPAND,
     A.PARAGRAPH_VIVID,
@@ -58,6 +69,11 @@ export function resultFor(action, context = {}, vocabulary = word, resolved = fa
   const original = context.studentSentence || sentence;
   const studentTask = '选择一个建议，用自己的想法修改，再读一读。';
   const results = {
+    [A.PARAGRAPH_HINT]: {
+      ideas: ['想想接下来发生了什么。', '写一写你当时的心情。', '怎样让前后的事情连起来？'],
+      examples: ['我和弟弟仔细听了听。', '我们互相看了一眼，心里既紧张又好奇。'],
+      studentTask,
+    },
     [A.SENTENCE_HINT]: {
       thinkingQuestions: ['小明参加什么比赛？', '大家怎样为他加油？'],
       usefulPatterns: ['一边……一边……'],

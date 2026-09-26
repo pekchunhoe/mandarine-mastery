@@ -6,6 +6,7 @@ export const DEFAULT_ADVANCED_MODEL = 'gemini-3.6-flash';
 // Compatibility export for server integrations that previously imported it.
 export const DEFAULT_MODEL = DEFAULT_FAST_MODEL;
 export const FAST_ACTIONS = new Set([
+  'paragraph_hint',
   'sentence_hint',
   'sentence_check',
   'sentence_expand',
@@ -19,6 +20,7 @@ export const ADVANCED_ACTIONS = new Set(['paragraph_review', 'essay_review']);
 // Keep a margin below Vercel's 40-second function duration for response cleanup.
 export const TIMEOUT_MS = 35000;
 export const OUTPUT_TOKEN_CAPS = {
+  paragraph_hint: 650,
   sentence_hint: 320,
   sentence_check: 380,
   sentence_expand: 500,

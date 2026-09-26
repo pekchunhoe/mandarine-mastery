@@ -55,7 +55,155 @@ async function mockTutor(page, transform) {
 const clickAI = (page, action) => page.locator(`[data-ai-action="${action}"]`).click();
 const close = (page) => page.locator('#modal [data-close-modal]').click();
 const done = (page) =>
-  page.locator('.ai-result[aria-busy="false"] h3').filter({ hasText: '轮到你了' }).waitFor();
+  page
+    .locator('.ai-result[aria-busy="false"] h3')
+    .filter({ hasText: /轮到你了|小提醒/ })
+    .waitFor();
+
+const forestStory = [
+  '星期六，我和弟弟到森林里散步。我们突然听见草丛里传来奇怪的声音。',
+  '我们走近一看，发现是一只受伤的小猫，于是把它抱回家。',
+  '这次森林里的发现让我很难忘。',
+];
+async function forestFixture(t) {
+  const page = await fixture(t, B.ESSAY);
+  for (const name of ['essay-titles', 'essay-contents']) {
+    const rows = JSON.parse(
+      await readFile(new URL(`../data/${name}.json`, import.meta.url), 'utf8'),
+    );
+    await page.route(`**/data/${name}.json`, (route) =>
+      route.fulfill({
+        json: rows.map((row) =>
+          name === 'essay-titles'
+            ? {
+                ...row,
+                title: '森林里的发现',
+                writingGuidance: ['下雨天在公园帮助老人'],
+                suggestedKeywords: ['描写大雨、公园、老人和雨伞。'],
+              }
+            : {
+                ...row,
+                content:
+                  '下雨天在公园帮助老人。我撑着雨伞扶老奶奶过马路。\n\n最后，我撑着雨伞扶老奶奶过马路。\n\n雨停了。',
+              },
+        ),
+      }),
+    );
+  }
+  await page.reload();
+  await page.locator('#guided-line').waitFor();
+  assert.deepEqual(await page.locator('[data-guided-paragraph]').allTextContents(), [
+    '1. 开头',
+    '2. 结果',
+    '3. 结尾',
+  ]);
+  return page;
+}
+
+test('paragraph hint: three real stage payloads exclude rendered rain/elderly scaffolding and preserve writing', async (t) => {
+  const page = await forestFixture(t);
+  const sent = await mockTutor(page);
+  for (let i = 0; i < 4; i++) await page.locator('#guided-more-help').click();
+  const scaffold = await page.locator('.guided-help').textContent();
+  for (const text of [
+    '下雨天在公园帮助老人',
+    '我撑着雨伞扶老奶奶过马路。',
+    '描写大雨、公园、老人和雨伞。',
+  ])
+    assert.ok(scaffold.includes(text));
+  assert.equal(sent.length, 0, 'local hint levels never request AI');
+  assert.equal(await page.locator('.guided-help [data-ai-action]').count(), 0);
+  for (const index of [1, 2]) {
+    await page.locator(`[data-guided-paragraph="${index}"]`).click();
+    await page.locator('#guided-line').fill(forestStory[index]);
+  }
+  await page.locator('[data-guided-paragraph="0"]').click();
+  for (const index of [0, 0, 1, 2]) {
+    await page.locator(`[data-guided-paragraph="${index}"]`).click();
+    const before = await essayState(page);
+    await clickAI(page, A.PARAGRAPH_HINT);
+    await done(page);
+    const input = sent.at(-1);
+    assert.deepEqual(input, {
+      action: A.PARAGRAPH_HINT,
+      activity: B.ESSAY,
+      context: {
+        selectedTitle: '森林里的发现',
+        paragraphStage: ['opening', 'result', 'ending'][index],
+        currentStudentParagraph: await page.locator('#guided-line').inputValue(),
+        previousStudentParagraphs: forestStory.slice(0, index),
+      },
+    });
+    assert.doesNotMatch(
+      JSON.stringify(input),
+      /下雨|公园|老人|雨伞|扶老奶奶|writingPoint|localHint|modelParagraph|EssayContents/,
+    );
+    for (const later of forestStory.slice(index + 1))
+      assert.ok(!JSON.stringify(input).includes(later));
+    assert.match(await page.locator('.ai-result').textContent(), /可以写什么.*参考写法.*小提醒/s);
+    await close(page);
+    assert.deepEqual(await essayState(page), before);
+    if (index === 0) await page.locator('#guided-line').fill(forestStory[0]);
+  }
+  assert.equal(sent.length, 4);
+});
+
+test('paragraph hint: missing prior story stays local without scaffold fallback', async (t) => {
+  const page = await forestFixture(t),
+    sent = await mockTutor(page);
+  for (const index of [1, 2]) {
+    await page.locator(`[data-guided-paragraph="${index}"]`).click();
+    await clickAI(page, A.PARAGRAPH_HINT);
+    await page.locator('.ai-result [role="alert"]').waitFor();
+    assert.match(await page.locator('.ai-result').textContent(), /先.*开头/);
+    await close(page);
+  }
+  await page.locator('[data-guided-paragraph="0"]').click();
+  await page.locator('#guided-line').fill(forestStory[0]);
+  await page.locator('[data-guided-paragraph="2"]').click();
+  await clickAI(page, A.PARAGRAPH_HINT);
+  await page.locator('.ai-result [role="alert"]').waitFor();
+  assert.match(await page.locator('.ai-result').textContent(), /前面的经过、结果/);
+  assert.equal(sent.length, 0);
+});
+
+test('paragraph hint: ending cache ignores actual reference edits but follows story and selected title edits', async (t) => {
+  const page = await forestFixture(t),
+    sent = await mockTutor(page);
+  for (let i = 0; i < 3; i++) {
+    await page.locator(`[data-guided-paragraph="${i}"]`).click();
+    await page.locator('#guided-line').fill(forestStory[i]);
+  }
+  const ask = async (count) => {
+    await clickAI(page, A.PARAGRAPH_HINT);
+    await done(page);
+    await close(page);
+    assert.equal(sent.length, count);
+  };
+  await ask(1);
+  await page.evaluate(async () => {
+    const { getEssayContents } = await import('/js/essay-content-service.js');
+    for (const row of getEssayContents())
+      row.content =
+        '下雨天在公园帮助老人。\n\n最后，我扶老奶奶过马路。\n\n我撑着雨伞扶老奶奶过马路。';
+  });
+  for (let i = 0; i < 4; i++) await page.locator('#guided-more-help').click();
+  assert.match(await page.locator('.example-hint-text').textContent(), /扶老奶奶/);
+  await ask(1);
+  await page.locator('[data-guided-paragraph="1"]').click();
+  await page.locator('#guided-line').fill(forestStory[1] + '小猫轻轻叫了一声。');
+  await page.locator('[data-guided-paragraph="2"]').click();
+  await ask(2);
+  await page.evaluate(async () => {
+    const { getEssayTitleById } = await import('/js/essay-title-service.js');
+    getEssayTitleById(document.querySelector('#training-topic').value).title = '我和弟弟的发现';
+  });
+  await page.locator('[data-guided-paragraph="2"]').click();
+  await ask(3);
+  assert.equal(sent.at(-1).context.selectedTitle, '我和弟弟的发现');
+  await page.locator('#guided-line').fill('我想下次再去看看小猫。');
+  await ask(4);
+});
 
 for (const mode of ['free', 'blocks', 'paragraph'])
   test(`hybrid vocabulary reaches shared server and speech cards from ${mode}`, async (t) => {
@@ -453,7 +601,7 @@ test('three-paragraph essay: paragraph tools stay beside paragraph 2 and send on
     await page
       .locator('.guided-editor [data-ai-action]')
       .evaluateAll((buttons) => buttons.map((button) => button.dataset.aiAction)),
-    paragraphActions,
+    [A.PARAGRAPH_HINT, ...paragraphActions],
   );
   assert.deepEqual(
     await page
@@ -899,12 +1047,17 @@ for (const [width, height] of [
         : data,
     );
     const before = await essayState(page);
-    assert.equal(await page.locator('.guided-editor [data-ai-action]').count(), 5);
+    assert.equal(await page.locator('.guided-editor [data-ai-action]').count(), 6);
     assert.equal(await page.locator('.complete-essay [data-ai-action]').count(), 1);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.locator('.guided-editor .ai-toolbar').scrollIntoViewIfNeeded();
     await page.screenshot({ path: `test-results/tutor/paragraph-toolbar-${width}.png` });
-    for (const action of [A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID, A.VOCABULARY_HELP]) {
+    for (const action of [
+      A.PARAGRAPH_HINT,
+      A.PARAGRAPH_EXPAND,
+      A.PARAGRAPH_VIVID,
+      A.VOCABULARY_HELP,
+    ]) {
       await clickAI(page, action);
       await done(page);
       assert.ok(

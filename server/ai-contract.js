@@ -48,6 +48,15 @@ const paragraphSuggestionSchema = object({
   studentTask,
 });
 export const actions = {
+  [A.PARAGRAPH_HINT]: {
+    instruction:
+      '根据selectedTitle所选题目，结合previousStudentParagraphs中按顺序排列的学生自写故事，以及currentStudentParagraph中的当前未完成文字，给出提示。只延续学生自己的故事，不忽略当前已写内容，不虚构与故事矛盾的事实。绝不使用或推测写作要点、本地提示、范句、范文、EssayContents或预设段落。paragraphStage为opening时，只根据题目和当前文字帮助起头；result时，承接学生开头及已有经过，提示怎样继续发展；ending时，联系前面全部学生段落，帮助自然收束、呼应题目，只在合适时提示感受或收获，不强加道德教训。给2至4个可选择的ideas，不规定唯一答案；给1至2个独立的简短examples，每个最多两句、80字，不拼成可直接交作业的完整段落，不写完整开头、结尾或整篇作文。中文自然，适合小学生。studentTask是一句简短写作提醒，鼓励学生自己选择、自己动笔。',
+    schema: object({
+      ideas: array(string(100), 4, 2),
+      examples: array(string(80), 2, 1),
+      studentTask,
+    }),
+  },
   [A.SENTENCE_HINT]: {
     instruction:
       '结合当前情境或题目、要点和已有文字，给最多3个思考问题及最多2个带空格或省略号的句式。只启发，不提供完整成品句或段落。最后请学生自己动笔。',
@@ -239,6 +248,13 @@ export function validateTeachingResult(action, data, context) {
   if (action === A.SENTENCE_CHECK && (data.status === 'correct') !== (data.issues.length === 0))
     fail();
   if (action === A.SENTENCE_EXPAND && data.levels.some((item, index) => item.level !== index + 1))
+    fail();
+  if (
+    action === A.PARAGRAPH_HINT &&
+    data.examples.some(
+      (text) => /[\r\n]/u.test(text) || (text.match(/[。！？!?]+/gu) || []).length > 2,
+    )
+  )
     fail();
   return data;
 }

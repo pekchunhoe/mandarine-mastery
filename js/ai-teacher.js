@@ -37,6 +37,24 @@ const validTeachingData = (action, data) => {
   const items = (values, keys) =>
     Array.isArray(values) &&
     values.every((item) => item && keys.every((key) => nonempty(item[key])));
+  if (action === A.PARAGRAPH_HINT)
+    return (
+      strings(data.ideas) &&
+      data.ideas.length >= 2 &&
+      data.ideas.length <= 4 &&
+      data.ideas.every((text) => text.length <= 100) &&
+      strings(data.examples) &&
+      data.examples.length >= 1 &&
+      data.examples.length <= 2 &&
+      data.examples.every(
+        (text) =>
+          text.length <= 80 &&
+          !/[\r\n]/u.test(text) &&
+          (text.match(/[。！？!?]+/gu) || []).length <= 2,
+      ) &&
+      data.studentTask.length <= 140 &&
+      Object.keys(data).every((key) => ['ideas', 'examples', 'studentTask'].includes(key))
+    );
   if (action === A.SENTENCE_HINT)
     return (
       strings(data.thinkingQuestions) &&
