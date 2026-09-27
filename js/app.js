@@ -22,6 +22,7 @@ import {
   activitySnapshot,
 } from './activity-context.js';
 import { initNavigation, currentRoute, backButton, updateBackButtons } from './navigation.js';
+import { watchForDeploymentUpdate } from './deployment-version.js';
 
 const nav = [
   ['home', '⌂', '学习花园'],
@@ -36,6 +37,7 @@ let renderedEntry;
 let screenState = state;
 let ready = false;
 const navigation = initNavigation();
+let deploymentUpdateShown = false;
 // Keep the actual activity root and its handlers, including answers that only
 // exist inside a renderer's closure. Detaching it does not reset student work.
 const activityScreens = new Map();
@@ -45,6 +47,16 @@ function clearEssayHighlight(panel) {
     sentence.classList.remove('essay-sentence--active');
     sentence.removeAttribute('aria-current');
   });
+}
+function showDeploymentUpdate() {
+  if (deploymentUpdateShown) return;
+  deploymentUpdateShown = true;
+  const notice = document.createElement('section');
+  notice.className = 'deployment-update-notice';
+  notice.setAttribute('role', 'alert');
+  notice.innerHTML = '<p>应用已更新，请重新载入页面。</p><button type="button" class="btn primary">重新载入</button>';
+  notice.querySelector('button').addEventListener('click', () => window.location.reload());
+  document.body.append(notice);
 }
 function highlightEssaySentence(panel, index) {
   const sentences = [...(panel?.querySelectorAll?.('[data-essay-sentence]') || [])];
@@ -252,7 +264,12 @@ async function start() {
     ready = true;
     navigation.sync();
     render();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+    watchForDeploymentUpdate(showDeploymentUpdate);
+    if ('serviceWorker' in navigator)
+      navigator.serviceWorker
+        .register('./sw.js')
+        .then((registration) => registration.update())
+        .catch(() => {});
   } catch (error) {
     console.error(error);
     $('#app').innerHTML =

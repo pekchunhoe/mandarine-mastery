@@ -353,6 +353,25 @@
   opacity: 1;
   transform: translate(-50%, 0);
 }
+.deployment-update-notice {
+  position: fixed;
+  z-index: 1000;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: max(16px, env(safe-area-inset-left));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 620px;
+  margin: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: 0 12px 32px rgb(29 48 37 / 24%);
+}
+.deployment-update-notice p { margin: 0; }
 .ai-toolbar {
   margin-block: 12px;
   padding: 10px;

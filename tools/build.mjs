@@ -41,11 +41,17 @@ async function files(dir, prefix = '') {
   }
   return list;
 }
-const assets = (await files(out)).filter((x) => x !== './sw.js');
+const assets = (await files(out)).filter((x) => !['./sw.js', './version.json'].includes(x));
 const template = await readFile(path.join(root, 'sw.js'), 'utf8');
 const digest = createHash('sha256');
 for (const file of assets.sort()) digest.update(await readFile(path.join(out, file)));
 const cacheName = `huawen-lab-${digest.digest('hex').slice(0, 12)}`;
+const versionModule = path.join(out, 'js', 'deployment-version.js');
+await writeFile(
+  versionModule,
+  (await readFile(versionModule, 'utf8')).replace('__BUILD_VERSION__', cacheName),
+);
+await writeFile(path.join(out, 'version.json'), `${JSON.stringify({ version: cacheName })}\n`);
 await writeFile(
   path.join(out, 'sw.js'),
   template
