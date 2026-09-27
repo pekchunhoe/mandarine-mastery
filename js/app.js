@@ -3,10 +3,24 @@ import { escapeHTML as e, toast, $, prettyGrade } from './utils.js';
 import { home, activityList, library, stats, teacher, settings } from './views.js';
 import { runActivity } from './session.js';
 import { wordModal, closeModal } from '../components/modal.js';
-import { initSpeech, speak, speakSequence, refreshSpeech, stop, pause, resume, setSpeechRate } from './speech-service.js';
+import {
+  initSpeech,
+  speak,
+  speakSequence,
+  refreshSpeech,
+  stop,
+  pause,
+  resume,
+  setSpeechRate,
+} from './speech-service.js';
 import { streak } from './mastery.js';
 import { manageVocabulary } from '../components/vocabulary-library.js';
-import { openTemporaryHelper, observeRouteChange, returnContext, activitySnapshot } from './activity-context.js';
+import {
+  openTemporaryHelper,
+  observeRouteChange,
+  returnContext,
+  activitySnapshot,
+} from './activity-context.js';
 import { initNavigation, currentRoute, backButton, updateBackButtons } from './navigation.js';
 
 const nav = [
@@ -43,7 +57,12 @@ function highlightEssaySentence(panel, index) {
   const active = sentences[index];
   if (!active) return;
   const bounds = active.getBoundingClientRect?.();
-  if (bounds && (bounds.bottom < 0 || bounds.top > globalThis.innerHeight)) active.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+  if (bounds && (bounds.bottom < 0 || bounds.top > globalThis.innerHeight))
+    active.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+}
+function setEssayReaderStatus(panel, message) {
+  const status = panel?.closest('.complete-essay')?.querySelector('[data-essay-reader-status]');
+  if (status) status.textContent = message;
 }
 function render() {
   stop();
@@ -86,8 +105,7 @@ function render() {
       cleanup = cached.cleanup;
       activityScreens.delete(renderedEntry);
       cleanup.resume();
-    }
-    else if (page === 'home') home(root);
+    } else if (page === 'home') home(root);
     else if (page === 'activities') activityList(root, params);
     else if (['library', 'weak', 'review'].includes(page)) library(root, page);
     else if (page === 'stats') stats(root);
@@ -107,11 +125,18 @@ function render() {
   if (!root.querySelector('[data-navigation-back]'))
     root.insertAdjacentHTML('afterbegin', `<div class="page-back-bar">${backButton()}</div>`);
   if (activityReturn && page !== 'activity')
-    root.querySelector('.page-back-bar')?.insertAdjacentHTML('beforeend', `<span class="small muted">正在使用${e(activityReturn.helperLabel)}</span>`);
+    root
+      .querySelector('.page-back-bar')
+      ?.insertAdjacentHTML(
+        'beforeend',
+        `<span class="small muted">正在使用${e(activityReturn.helperLabel)}</span>`,
+      );
   updateBackButtons(root);
   refreshSpeech();
   const snapshot = page === 'activity' ? activitySnapshot(route) : null;
-  const top = changingPage ? navigation.scrollPosition ?? snapshot?.scrollPosition ?? 0 : window.scrollY;
+  const top = changingPage
+    ? (navigation.scrollPosition ?? snapshot?.scrollPosition ?? 0)
+    : window.scrollY;
   cancelAnimationFrame(scrollFrame);
   scrollFrame = requestAnimationFrame(() => {
     window.scrollTo({ top, behavior: 'instant' });
@@ -120,7 +145,12 @@ function render() {
 }
 document.addEventListener('click', (event) => {
   const helper = event.target.closest('[data-open-helper]');
-  if (helper) openTemporaryHelper({ helperType: helper.dataset.openHelper, helperLabel: helper.dataset.helperLabel || '学习工具', target: helper.getAttribute('href') });
+  if (helper)
+    openTemporaryHelper({
+      helperType: helper.dataset.openHelper,
+      helperLabel: helper.dataset.helperLabel || '学习工具',
+      target: helper.getAttribute('href'),
+    });
   if (event.target.closest('[data-navigation-back]')) {
     event.preventDefault();
     navigation.back();
@@ -151,14 +181,28 @@ document.addEventListener('click', (event) => {
   if (word) wordModal(word.dataset.wordCard);
   const essaySpeech = event.target.closest('[data-speak-essay]');
   if (essaySpeech && !essaySpeech.disabled) {
-    const panel = essaySpeech.closest('.model-reading, .model-essay-reference');
+    const panel =
+      essaySpeech.closest('[data-essay-speech-panel], .model-reading, .model-essay-reference') ||
+      essaySpeech.closest('.complete-essay')?.querySelector('[data-essay-speech-panel]');
     const sentences = [...(panel?.querySelectorAll?.('[data-essay-sentence]') || [])];
     if (sentences.length) {
-      speakSequence(sentences.map((sentence) => sentence.textContent), {
-        onSentenceStart: (index) => highlightEssaySentence(panel, index),
-        onComplete: () => clearEssayHighlight(panel),
-        onStop: () => clearEssayHighlight(panel),
-      });
+      speakSequence(
+        sentences.map((sentence) => sentence.textContent),
+        {
+          onSentenceStart: (index) => {
+            highlightEssaySentence(panel, index);
+            setEssayReaderStatus(panel, `正在朗读第 ${index + 1} 句。`);
+          },
+          onComplete: () => {
+            clearEssayHighlight(panel);
+            setEssayReaderStatus(panel, '朗读完成，可以再听一次。');
+          },
+          onStop: () => {
+            clearEssayHighlight(panel);
+            setEssayReaderStatus(panel, '朗读已停止。');
+          },
+        },
+      );
       return;
     }
   }

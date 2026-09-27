@@ -5,7 +5,7 @@ import { getActiveEssayContentsByEssayId } from '../js/essay-content-service.js'
 import { countCompositionCharacters } from '../js/writing-checks.js';
 import { deriveEssayTraining, writingLengthGuidance } from '../js/essay-training-service.js';
 import { resolveReferenceParagraph, splitChineseSentences } from '../js/essay-sentence-service.js';
-import { enhanceSpeechUI, stop } from '../js/speech-service.js';
+import { enhanceSpeechUI, essaySpeechControls, stop } from '../js/speech-service.js';
 import { openVocabularyDialog } from '../components/vocabulary-dialog.js';
 import { copyText as copyEssayText } from '../js/clipboard.js';
 import { aiToolbar, attachAITeacher } from '../components/ai-teacher.js';
@@ -23,6 +23,20 @@ const paragraphHTML = (paragraph) =>
   `<p class="model-paragraph">${splitChineseSentences(paragraph.text)
     .map((sentence) => `<span class="essay-sentence" data-essay-sentence>${e(sentence)}</span>`)
     .join('')}</p>`;
+// This read-only view is derived only from the student's saved paragraph lines.
+// It is never written back to the draft or used as AI context.
+const studentEssayReadHTML = (lines) =>
+  lines
+    .filter(Boolean)
+    .map(
+      (paragraph) =>
+        `<p class="guided-essay-read-paragraph">${splitChineseSentences(paragraph)
+          .map(
+            (sentence) => `<span class="essay-sentence" data-essay-sentence>${e(sentence)}</span>`,
+          )
+          .join('')}</p>`,
+    )
+    .join('\n\n');
 const topicInfo = (topic, content) =>
   `<span class="pill">${gradeName[topic.gradeMin - 1]}年级</span><span class="pill">${e(topic.category)}</span><span class="pill">难度 ${e(topic.difficulty)}</span><span class="small muted">约 ${content.wordCount} 字</span>`;
 
@@ -65,6 +79,7 @@ export function modelEssayStudy(root, ctx) {
     ctx.params.get('content') || getActiveEssayContentsByEssayId(topic?.id)[0]?.contentId;
   let selectedParagraph = 0;
   const draw = () => {
+    stop();
     topics = filteredTopics(filters);
     if (!topics.some((item) => item.id === topic?.id)) topic = topics[0];
     const contents = getActiveEssayContentsByEssayId(topic?.id);
@@ -185,6 +200,8 @@ export function guidedEssayWriting(root, ctx) {
     }, 400);
   };
   const draw = () => {
+    // Any redraw replaces the read-only sentence spans, so cancel a stale reader first.
+    stop();
     topics = filteredTopics(filters);
     if (!topics.some((item) => item.id === topic?.id)) topic = topics[0];
     const contents = getActiveEssayContentsByEssayId(topic?.id);
@@ -232,7 +249,7 @@ export function guidedEssayWriting(root, ctx) {
       A.ESSAY_NEXT_STEP,
       A.PARAGRAPH_REVIEW,
     ];
-    root.innerHTML = `<h2>要点导写</h2><p class="question-instruction">参考要点，用自己的内容来写。完整范文会在你尝试后才显示。</p>${TopicPicker({ topics, catalog: allModelTopics(), selectedId: topic.id, filters })}<section class="guided-topic panel"><div><h3>《${e(topic.title)}》</h3><div class="row wrap">${topicInfo(topic, content)}</div></div>${contents.length > 1 ? `<label>难度/版本<select id="guided-content">${contents.map((entry) => `<option value="${e(entry.contentId)}" ${entry.contentId === contentId ? 'selected' : ''}>${e(entry.contentTitle || entry.version)} · ${e(entry.level)}</option>`).join('')}</select></label>` : ''}<p>${e(topic.writingGuidance.join('、') || '先想清楚，再按顺序写。')}</p></section><section class="panel soft guided-think"><h3>第一步：想一想</h3><ul>${training.writingQuestions.map((question) => `<li>${e(question)}</li>`).join('')}</ul></section><div class="guided-layout"><section class="panel guided-editor"><div class="guided-steps">${training.paragraphs.map((paragraph, index) => `<button data-guided-paragraph="${index}" class="${index === activeParagraph ? 'active' : ''}" aria-current="${index === activeParagraph ? 'step' : 'false'}">${index + 1}. ${e(paragraph.label)}</button>`).join('')}</div><h3>第${activeParagraph + 1}段：${e(item.label)}</h3><p class="muted">${e(item.role)}</p><div class="row between"><label for="guided-line">我的这一段</label><button type="button" class="btn" id="guided-vocabulary" aria-haspopup="dialog" aria-controls="modal">词语库</button></div><textarea id="guided-line" class="guided-line" placeholder="用自己的经历来写，不必照抄范文。">${e(draft.lines[activeParagraph])}</textarea><div class="row between"><span id="guided-line-count" class="small muted">这一段 ${countCompositionCharacters(draft.lines[activeParagraph])} 字</span><button id="guided-next" class="btn primary">${activeParagraph === training.paragraphCount - 1 ? '完成作文 →' : '完成这一段 →'}</button></div>${aiToolbar(TUTOR_ACTIVITY.ESSAY, paragraphActions)}</section><aside class="guided-help"><section class="panel soft"><h3>给我一点提示</h3><p class="small muted">第 ${draft.helpLevel} / 5 层提示。你可以按自己的需要停下来。</p><div class="action-bar"><button class="btn" id="guided-more-help" ${draft.helpLevel >= 5 ? 'disabled' : ''}>${draft.helpLevel === 1 ? '看关键词' : draft.helpLevel === 2 ? '看写作要点' : draft.helpLevel === 3 ? '看句子提示' : '看范句'}</button></div>${keywordPanel}${pointPanel}${cuePanel}${examplePanel}</section><section class="panel sentence-starters"><h3>常用句子开头</h3>${training.sentenceStarters.map((starter) => `<button class="sentence-starter" data-starter="${e(starter.replace('……', ''))}">${e(starter)}</button>`).join('')}</section></aside></div><section class="panel complete-essay"><div class="row between"><div><h3>我的作文</h3><p class="small muted">当前字数：<strong id="guided-total-count">${count}</strong> · ${writingLengthGuidance(count)}</p></div><div class="row guided-essay-actions"><button type="button" class="btn" id="guided-copy" aria-label="复制全文" ${draft.text ? '' : 'disabled'}>复制全文</button><button type="button" class="btn" id="guided-reset">重新开始</button></div></div>${aiToolbar(TUTOR_ACTIVITY.ESSAY, [A.ESSAY_REVIEW])}<div class="writing-preview" id="guided-preview">${e(draft.text || '完成每一段后，这里会合成你的作文。')}</div></section><section class="panel self-assess"><h3>作文小检查</h3>${['我有写清楚人物或事情。', '我有分段。', '事情有开始、经过和结果。', '我用了完整句子。', '我写了自己的感受。', '我检查了错别字。', '我的结尾完整。'].map((label, index) => `<div class="check-row"><input id="guided-check-${index}" data-guided-check="${index}" type="checkbox" ${draft.checklist[index] ? 'checked' : ''}><label for="guided-check-${index}">${label}</label></div>`).join('')}</section><section class="model-reveal panel ${draft.reveal ? 'revealed' : ''}"><div class="row between"><div><h3>参考范文</h3><p class="small muted">先看自己的作文，再比较开头、段落顺序和表达方式。</p></div><button class="btn ${draft.reveal ? '' : 'primary'}" id="guided-reveal">${draft.reveal ? '收起范文' : '完成后查看范文'}</button></div>${draft.reveal ? `<div class="comparison-grid"><article><h4>我的作文</h4><div class="writing-preview">${e(draft.text || '还没有写内容。')}</div></article><article><h4>参考范文</h4>${training.paragraphs.map(paragraphHTML).join('')}</article></div>` : ''}</section>`;
+    root.innerHTML = `<h2>要点导写</h2><p class="question-instruction">参考要点，用自己的内容来写。完整范文会在你尝试后才显示。</p>${TopicPicker({ topics, catalog: allModelTopics(), selectedId: topic.id, filters })}<section class="guided-topic panel"><div><h3>《${e(topic.title)}》</h3><div class="row wrap">${topicInfo(topic, content)}</div></div>${contents.length > 1 ? `<label>难度/版本<select id="guided-content">${contents.map((entry) => `<option value="${e(entry.contentId)}" ${entry.contentId === contentId ? 'selected' : ''}>${e(entry.contentTitle || entry.version)} · ${e(entry.level)}</option>`).join('')}</select></label>` : ''}<p>${e(topic.writingGuidance.join('、') || '先想清楚，再按顺序写。')}</p></section><section class="panel soft guided-think"><h3>第一步：想一想</h3><ul>${training.writingQuestions.map((question) => `<li>${e(question)}</li>`).join('')}</ul></section><div class="guided-layout"><section class="panel guided-editor"><div class="guided-steps">${training.paragraphs.map((paragraph, index) => `<button data-guided-paragraph="${index}" class="${index === activeParagraph ? 'active' : ''}" aria-current="${index === activeParagraph ? 'step' : 'false'}">${index + 1}. ${e(paragraph.label)}</button>`).join('')}</div><h3>第${activeParagraph + 1}段：${e(item.label)}</h3><p class="muted">${e(item.role)}</p><div class="row between"><label for="guided-line">我的这一段</label><button type="button" class="btn" id="guided-vocabulary" aria-haspopup="dialog" aria-controls="modal">词语库</button></div><textarea id="guided-line" class="guided-line" placeholder="用自己的经历来写，不必照抄范文。">${e(draft.lines[activeParagraph])}</textarea><div class="row between"><span id="guided-line-count" class="small muted">这一段 ${countCompositionCharacters(draft.lines[activeParagraph])} 字</span><button id="guided-next" class="btn primary">${activeParagraph === training.paragraphCount - 1 ? '完成作文 →' : '完成这一段 →'}</button></div>${aiToolbar(TUTOR_ACTIVITY.ESSAY, paragraphActions)}</section><aside class="guided-help"><section class="panel soft"><h3>给我一点提示</h3><p class="small muted">第 ${draft.helpLevel} / 5 层提示。你可以按自己的需要停下来。</p><div class="action-bar"><button class="btn" id="guided-more-help" ${draft.helpLevel >= 5 ? 'disabled' : ''}>${draft.helpLevel === 1 ? '看关键词' : draft.helpLevel === 2 ? '看写作要点' : draft.helpLevel === 3 ? '看句子提示' : '看范句'}</button></div>${keywordPanel}${pointPanel}${cuePanel}${examplePanel}</section><section class="panel sentence-starters"><h3>常用句子开头</h3>${training.sentenceStarters.map((starter) => `<button class="sentence-starter" data-starter="${e(starter.replace('……', ''))}">${e(starter)}</button>`).join('')}</section></aside></div><section class="panel complete-essay"><div class="row between"><div><h3>我的作文</h3><p class="small muted">当前字数：<strong id="guided-total-count">${count}</strong> · ${writingLengthGuidance(count)}</p></div><div class="row guided-essay-actions"><button type="button" class="btn" id="guided-copy" aria-label="复制全文" ${draft.text ? '' : 'disabled'}>复制全文</button><button type="button" class="btn" id="guided-reset">重新开始</button></div></div>${essaySpeechControls('朗读我的作文', { disabled: !draft.text })}<p class="small muted" data-essay-reader-status aria-live="polite">${draft.text ? '准备朗读自己的作文。' : '先写一点作文，才能朗读哦。'}</p>${aiToolbar(TUTOR_ACTIVITY.ESSAY, [A.ESSAY_REVIEW])}<div class="writing-preview guided-student-reading" id="guided-preview" data-essay-speech-panel aria-label="我的作文朗读视图">${studentEssayReadHTML(draft.lines) || e('完成每一段后，这里会合成你的作文。')}</div></section><section class="panel self-assess"><h3>作文小检查</h3>${['我有写清楚人物或事情。', '我有分段。', '事情有开始、经过和结果。', '我用了完整句子。', '我写了自己的感受。', '我检查了错别字。', '我的结尾完整。'].map((label, index) => `<div class="check-row"><input id="guided-check-${index}" data-guided-check="${index}" type="checkbox" ${draft.checklist[index] ? 'checked' : ''}><label for="guided-check-${index}">${label}</label></div>`).join('')}</section><section class="model-reveal panel ${draft.reveal ? 'revealed' : ''}"><div class="row between"><div><h3>参考范文</h3><p class="small muted">先看自己的作文，再比较开头、段落顺序和表达方式。</p></div><button class="btn ${draft.reveal ? '' : 'primary'}" id="guided-reveal">${draft.reveal ? '收起范文' : '完成后查看范文'}</button></div>${draft.reveal ? `<div class="comparison-grid"><article><h4>我的作文</h4><div class="writing-preview">${e(draft.text || '还没有写内容。')}</div></article><article><h4>参考范文</h4>${training.paragraphs.map(paragraphHTML).join('')}</article></div>` : ''}</section>`;
   };
   enhanceSpeechUI(root);
   const saveLine = (immediate = true) => {
@@ -311,14 +328,26 @@ export function guidedEssayWriting(root, ctx) {
         return;
       }
       if (event.target.id === 'guided-line') {
+        stop();
         focusedTextarea = event.target;
         saveLine(false);
         scheduleSave();
         $('#guided-line-count', root).textContent =
           `这一段 ${countCompositionCharacters(event.target.value)} 字`;
         $('#guided-total-count', root).textContent = countCompositionCharacters(draft.text);
-        $('#guided-preview', root).textContent = draft.text || '完成每一段后，这里会合成你的作文。';
+        $('#guided-preview', root).innerHTML =
+          studentEssayReadHTML(draft.lines) || e('完成每一段后，这里会合成你的作文。');
         $('#guided-copy', root).disabled = !draft.text;
+        const readerButton = $('#guided-preview', root)
+          ?.closest('.complete-essay')
+          ?.querySelector('[data-speak-essay]');
+        if (readerButton) {
+          readerButton.dataset.essaySpeechReady = String(Boolean(draft.text));
+          readerButton.disabled = !draft.text;
+        }
+        $('[data-essay-reader-status]', root).textContent = draft.text
+          ? '作文已更新，可以重新朗读。'
+          : '先写一点作文，才能朗读哦。';
       }
     },
     { signal: ctx.signal },
@@ -383,7 +412,14 @@ export function guidedEssayWriting(root, ctx) {
         $('#guided-line-count', root).textContent =
           `这一段 ${countCompositionCharacters(field.value)} 字`;
         $('#guided-total-count', root).textContent = countCompositionCharacters(draft.text);
-        $('#guided-preview', root).textContent = draft.text;
+        $('#guided-preview', root).innerHTML = studentEssayReadHTML(draft.lines);
+        const readerButton = $('#guided-preview', root)
+          ?.closest('.complete-essay')
+          ?.querySelector('[data-speak-essay]');
+        if (readerButton) {
+          readerButton.dataset.essaySpeechReady = String(Boolean(draft.text));
+          readerButton.disabled = !draft.text;
+        }
         return;
       }
       if (button.id === 'guided-next') {
@@ -410,6 +446,7 @@ export function guidedEssayWriting(root, ctx) {
         return;
       }
       if (button.id === 'guided-reset') {
+        stop();
         draft.lines = draft.lines.map(() => '');
         draft.reveal = false;
         save();

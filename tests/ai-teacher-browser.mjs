@@ -34,6 +34,52 @@ async function fixture(t, width = 390, height = 844) {
   await page.locator('#guided-line').waitFor();
   return page;
 }
+async function speechFixture(t, width = 390, height = 844) {
+  const context = await browser.newContext({
+    viewport: { width, height },
+    serviceWorkers: 'block',
+  });
+  t.after(() => context.close());
+  await context.addInitScript(() => {
+    window.__speechUtterances = [];
+    window.__speechEvents = [];
+    class MockUtterance {
+      constructor(text) {
+        this.text = text;
+      }
+    }
+    Object.defineProperty(window, 'SpeechSynthesisUtterance', {
+      configurable: true,
+      value: MockUtterance,
+    });
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        getVoices: () => [{ name: 'Mandarin China', lang: 'zh-CN' }],
+        addEventListener() {},
+        speak(utterance) {
+          window.__speechUtterances.push(utterance);
+        },
+        cancel() {
+          window.__speechEvents.push('cancel');
+        },
+        pause() {
+          window.__speechEvents.push('pause');
+        },
+        resume() {
+          window.__speechEvents.push('resume');
+        },
+      },
+    });
+  });
+  const page = await context.newPage(),
+    errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  t.after(() => assert.deepEqual(errors, []));
+  await page.goto(`${base}#activity/guidedEssay`);
+  await page.locator('#guided-line').waitFor();
+  return page;
+}
 async function snapshot(page) {
   return page.evaluate(() => ({
     draft: document.querySelector('#guided-line').value,
@@ -45,6 +91,92 @@ async function snapshot(page) {
   }));
 }
 const close = (page) => page.locator('#modal [data-close-modal]').click();
+test('guided essay reader speaks only current student paragraphs with highlights, controls, updates and navigation cleanup', async (t) => {
+  const page = await speechFixture(t, 390, 844);
+  let aiRequests = 0;
+  await page.route('**/api/gemini', async (route) => {
+    aiRequests++;
+    await route.abort();
+  });
+  const own = [
+    '星期六，我和弟弟到森林里散步。',
+    '我们突然听见草丛里传来奇怪的声音。',
+    '后来我们发现，原来是一只受伤的小猫。',
+  ];
+  const reader = page.locator('.complete-essay');
+  assert.equal(await reader.locator('[data-speak-essay]').isDisabled(), true);
+  for (let index = 0; index < own.length; index++) {
+    await page.locator(`[data-guided-paragraph="${index}"]`).click();
+    await page.locator('#guided-line').fill(own[index]);
+  }
+  assert.equal(await reader.locator('[data-speak-essay]').isEnabled(), true);
+  assert.equal(await reader.locator('.guided-essay-read-paragraph').count(), 3);
+  assert.equal(await reader.locator('#guided-preview').textContent(), own.join('\n\n'));
+  assert.deepEqual(await reader.locator('[data-essay-sentence]').allTextContents(), own);
+  for (const rate of [0.75, 1]) {
+    await reader.locator(`[data-speech-rate="${rate}"]`).click();
+    assert.equal(await reader.locator(`[data-speech-rate="${rate}"].active`).count(), 1);
+    await reader.locator('[data-speak-essay]').click();
+    assert.equal(await page.evaluate(() => window.__speechUtterances.at(-1).rate), rate);
+    await reader.locator('[data-speech-control="stop"]').click();
+    assert.equal(await reader.locator('.essay-sentence--active').count(), 0);
+    assert.equal(await reader.locator('[data-speak-essay]').isEnabled(), true);
+  }
+  await reader.locator('[data-speech-rate="1.25"]').click();
+  assert.equal(await reader.locator('[data-speech-rate="1.25"].active').count(), 1);
+  await reader.locator('[data-speak-essay]').click();
+  assert.equal(await page.evaluate(() => window.__speechUtterances.length), 3);
+  assert.deepEqual(
+    await page.evaluate(() => {
+      const { text, lang, rate } = window.__speechUtterances.at(-1);
+      return { text, lang, rate };
+    }),
+    { text: own[0], lang: 'zh-CN', rate: 1.25 },
+  );
+  assert.equal(await reader.locator('.essay-sentence--active').count(), 1);
+  assert.equal(await reader.locator('.essay-sentence--active').textContent(), own[0]);
+  await reader.locator('[data-speech-control="pause"]').click();
+  await reader.locator('[data-speech-control="resume"]').click();
+  assert.deepEqual(await page.evaluate(() => window.__speechEvents.slice(-2)), ['pause', 'resume']);
+  const sentenceSequenceStart = await page.evaluate(() => window.__speechUtterances.length - 1);
+  for (let index = 0; index < own.length; index++) {
+    await page.evaluate(
+      (current) => window.__speechUtterances[current].onend(),
+      sentenceSequenceStart + index,
+    );
+    if (index < own.length - 1) {
+      assert.equal(await reader.locator('.essay-sentence--active').count(), 1);
+      assert.equal(await reader.locator('.essay-sentence--active').textContent(), own[index + 1]);
+    }
+  }
+  assert.equal(await reader.locator('.essay-sentence--active').count(), 0);
+  assert.match(await reader.locator('[data-essay-reader-status]').textContent(), /朗读完成/);
+  await reader.locator('[data-speak-essay]').click();
+  await page.locator('[data-guided-paragraph="2"]').click();
+  await page.locator('#guided-line').fill('小猫恢复精神后，我们开心地笑了。');
+  assert.equal(await reader.locator('.essay-sentence--active').count(), 0);
+  assert.equal(await page.evaluate(() => window.__speechEvents.at(-1)), 'cancel');
+  await reader.locator('[data-speak-essay]').click();
+  assert.equal(
+    await page.evaluate(() => window.__speechUtterances.at(-1).text),
+    own[0],
+  );
+  await page.evaluate(() => window.__speechUtterances.at(-1).onend());
+  assert.equal(await page.evaluate(() => window.__speechUtterances.at(-1).text), own[1]);
+  await page.evaluate(() => window.__speechUtterances.at(-1).onend());
+  assert.equal(
+    await page.evaluate(() => window.__speechUtterances.at(-1).text),
+    '小猫恢复精神后，我们开心地笑了。',
+  );
+  await reader.locator('#guided-reset').click();
+  assert.equal(await reader.locator('.essay-sentence--active').count(), 0);
+  assert.equal(await reader.locator('[data-speak-essay]').isDisabled(), true);
+  assert.equal(await page.evaluate(() => window.__speechEvents.at(-1)), 'cancel');
+  await page.goto(`${base}#activities`);
+  await page.locator('#main h1').waitFor();
+  assert.equal(await page.evaluate(() => window.__speechEvents.at(-1)), 'cancel');
+  assert.equal(aiRequests, 0);
+});
 test('feedback displays all sections, preserves draft/count/selection/autosave/history and copy', async (t) => {
   const page = await fixture(t);
   let sent;
