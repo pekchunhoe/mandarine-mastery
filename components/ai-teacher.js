@@ -18,6 +18,7 @@ import { copyText } from '../js/clipboard.js';
 export const aiToolbar = (
   activity = TUTOR_ACTIVITY.ESSAY,
   actions = activityTutorActions[activity],
+  { extraActions = '' } = {},
 ) =>
   '<section class="ai-toolbar" aria-label="AI老师"><strong>' +
   (activity === TUTOR_ACTIVITY.ESSAY
@@ -35,6 +36,7 @@ export const aiToolbar = (
         '</button>',
     )
     .join('') +
+  extraActions +
   '</div><p class="small muted">' +
   (activity === TUTOR_ACTIVITY.ESSAY
     ? 'AI老师会参考所选题目和你自己写的内容；本地提示和范句不会提交。请勿填写个人资料；由你来决定怎样修改。'

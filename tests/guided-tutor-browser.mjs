@@ -958,6 +958,83 @@ test('late malformed response cannot replace a newer successful result', async (
   assert.equal(await page.locator('#own-sentence').inputValue(), sentence);
 });
 
+test('guided external AI prompts copy every matching prompt locally without a Gemini request', async (t) => {
+  const page = await fixture(t, B.ESSAY);
+  const writing = '星期六，我和弟弟走进树林，忽然听见草丛里传来奇怪的声音。我紧张地拉着弟弟的手，慢慢走近一看，原来是一只受伤的小猫。我们决定先找大人帮忙，再把小猫送到安全的地方。';
+  await page.locator('#guided-line').fill(writing);
+  const requests = await mockTutor(page);
+  await page.evaluate(() => {
+    window.externalPromptCopies = [];
+    navigator.clipboard.writeText = async (text) => window.externalPromptCopies.push(text);
+  });
+
+  // The original direct teacher button still makes its normal Gemini request.
+  await clickAI(page, A.PARAGRAPH_REVIEW);
+  await done(page);
+  await close(page);
+  assert.equal(requests.length, 1);
+
+  const launcher = page.locator('[data-external-ai-launcher]');
+  const menu = page.locator('[data-external-ai-menu]');
+  assert.equal(await menu.locator('[data-external-ai-action]').count(), 6);
+  await launcher.click();
+  await page.keyboard.press('Escape');
+  assert.equal(await menu.isHidden(), true);
+  await launcher.click();
+  await page.locator('h2').first().click();
+  assert.equal(await menu.isHidden(), true);
+
+  for (const [index, action] of [
+    A.PARAGRAPH_HINT,
+    A.VOCABULARY_HELP,
+    A.PARAGRAPH_EXPAND,
+    A.PARAGRAPH_VIVID,
+    A.ESSAY_NEXT_STEP,
+    A.PARAGRAPH_REVIEW,
+  ].entries()) {
+    await launcher.click();
+    await menu.locator(`[data-external-ai-action="${action}"]`).click();
+    await page.waitForFunction((count) => window.externalPromptCopies.length === count, index + 1);
+    assert.equal(await menu.isHidden(), true);
+    const prompt = await page.evaluate(() => window.externalPromptCopies.at(-1));
+    assert.match(prompt, /【.*学生原文开始】/);
+    assert.match(prompt, new RegExp(writing));
+    assert.equal(requests.length, 1);
+  }
+
+  await page.locator(`[data-external-ai-action="${A.ESSAY_REVIEW}"]`).click();
+  await page.waitForFunction(() => window.externalPromptCopies.at(-1)?.includes('学生完整作文原文'));
+  const essayPrompt = await page.evaluate(() => window.externalPromptCopies.at(-1));
+  assert.match(essayPrompt, new RegExp(writing));
+  assert.equal(requests.length, 1);
+});
+
+for (const [width, height] of [
+  [320, 740],
+  [360, 800],
+  [375, 812],
+  [390, 844],
+  [412, 915],
+  [430, 932],
+  [844, 390],
+  [768, 1024],
+  [1024, 768],
+  [1440, 900],
+]) {
+  test(`guided external AI menu stays inside ${width}x${height}`, async (t) => {
+    const page = await fixture(t, B.ESSAY, { width, height });
+    await page.locator('[data-external-ai-launcher]').click();
+    const bounds = await page.locator('[data-external-ai-menu]').evaluate((menu) => {
+      const rect = menu.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+    });
+    assert.ok(bounds.left >= 0 && bounds.right <= width, JSON.stringify(bounds));
+    assert.ok(bounds.top >= 0 && bounds.bottom <= height, JSON.stringify(bounds));
+    await page.locator('h2').first().click();
+    assert.equal(await page.locator('[data-external-ai-menu]').isHidden(), true);
+  });
+}
+
 test('block composition survives mode switching, navigation, reload and normal submission', async (t) => {
   const page = await fixture(t);
   const record = records.find((item) => builders[item.word]);
