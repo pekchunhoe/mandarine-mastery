@@ -110,7 +110,35 @@ export function buildGuidedExternalAiPrompt(action, context) {
 function TopicPicker({ topics, catalog = topics, selectedId, filters }) {
   const select = (key, label, options) =>
     `<label>${label}<select data-training-filter="${key}"><option value="">全部</option>${options.map((value) => `<option value="${e(value)}" ${filters[key] === String(value) ? 'selected' : ''}>${e(value)}</option>`).join('')}</select></label>`;
-  return `<section class="essay-topic-picker panel soft training-picker"><div class="row between"><strong>选择作文题目</strong><span class="small muted">${topics.length} 个有范文的题目</span></div><label>搜索题目<input type="search" data-training-filter="search" value="${e(filters.search)}" placeholder="搜索题目、主题或关键词"></label><div class="training-filters">${select('grade', '年级', [1, 2, 3, 4, 5, 6])}${select('category', '类别', values(catalog, 'category'))}${select('theme', '主题', values(catalog, 'theme'))}${select('essayType', '作文类型', values(catalog, 'essayType'))}${select('difficulty', '难度', values(catalog, 'difficulty'))}</div><label>题目<select id="training-topic" ${topics.length ? '' : 'disabled'}>${topics.length ? topics.map((topic) => `<option value="${e(topic.id)}" ${topic.id === selectedId ? 'selected' : ''}>《${e(topic.title)}》 · ${e(topic.category)}</option>`).join('') : '<option>没有符合条件的题目</option>'}</select></label></section>`;
+  return `<section class="essay-topic-picker panel soft training-picker"><div class="row between"><strong>选择作文题目</strong><span class="small muted" data-training-topic-count>${topics.length} 个有范文的题目</span></div><label>搜索题目<input type="search" data-training-filter="search" value="${e(filters.search)}" placeholder="搜索题目、主题或关键词"></label><div class="training-filters">${select('grade', '年级', [1, 2, 3, 4, 5, 6])}${select('category', '类别', values(catalog, 'category'))}${select('theme', '主题', values(catalog, 'theme'))}${select('essayType', '作文类型', values(catalog, 'essayType'))}${select('difficulty', '难度', values(catalog, 'difficulty'))}</div><label>题目<select id="training-topic" ${topics.length ? '' : 'disabled'}>${topics.length ? topics.map((topic) => `<option value="${e(topic.id)}" ${topic.id === selectedId ? 'selected' : ''}>《${e(topic.title)}》 · ${e(topic.category)}</option>`).join('') : '<option>没有符合条件的题目</option>'}</select></label></section>`;
+}
+
+function refreshTopicSearchResults(root, topics, selectedId) {
+  const count = $('[data-training-topic-count]', root);
+  const selector = $('#training-topic', root);
+  if (count) count.textContent = `${topics.length} 个有范文的题目`;
+  if (!selector) return;
+
+  const selectedStillVisible = topics.some((topic) => topic.id === selectedId);
+  selector.replaceChildren(
+    ...(topics.length
+      ? [
+          ...(selectedStillVisible
+            ? []
+            : [new Option('请选择题目', '', true, true)]),
+          ...topics.map(
+            (topic) =>
+              new Option(
+                `《${topic.title}》 · ${topic.category}`,
+                topic.id,
+                false,
+                topic.id === selectedId,
+              ),
+          ),
+        ]
+      : [new Option('没有符合条件的题目', '', true, true)]),
+  );
+  selector.disabled = !topics.length;
 }
 
 const allModelTopics = () =>
@@ -169,7 +197,7 @@ export function modelEssayStudy(root, ctx) {
   root.addEventListener(
     'change',
     (event) => {
-      if (event.target.dataset.trainingFilter) {
+      if (event.target.dataset.trainingFilter && event.target.dataset.trainingFilter !== 'search') {
         filters[event.target.dataset.trainingFilter] = event.target.value;
         selectedParagraph = 0;
         draw();
@@ -194,8 +222,11 @@ export function modelEssayStudy(root, ctx) {
     (event) => {
       if (event.target.dataset.trainingFilter === 'search') {
         filters.search = event.target.value;
-        selectedParagraph = 0;
-        draw();
+        // Keep the active search control in place. Rebuilding `root` here used to
+        // disconnect the focused input after every character.
+        if (event.isComposing) return;
+        topics = filteredTopics(filters);
+        refreshTopicSearchResults(root, topics, topic?.id);
       }
     },
     { signal: ctx.signal },
@@ -460,8 +491,11 @@ export function guidedEssayWriting(root, ctx) {
     (event) => {
       if (event.target.dataset.trainingFilter === 'search') {
         filters.search = event.target.value;
-        activeParagraph = 0;
-        draw();
+        // IME composition must retain its candidate UI; the final input event
+        // updates only the result list and never replaces the search element.
+        if (event.isComposing) return;
+        topics = filteredTopics(filters);
+        refreshTopicSearchResults(root, topics, topic?.id);
         return;
       }
       if (event.target.id === 'guided-line') {
@@ -492,13 +526,15 @@ export function guidedEssayWriting(root, ctx) {
   root.addEventListener(
     'change',
     (event) => {
-      if (event.target.dataset.trainingFilter) {
+      if (event.target.dataset.trainingFilter && event.target.dataset.trainingFilter !== 'search') {
+        saveLine();
         filters[event.target.dataset.trainingFilter] = event.target.value;
         activeParagraph = 0;
         draw();
         return;
       }
       if (event.target.id === 'training-topic') {
+        saveLine();
         topic = getEssayTitles({ active: null }).find((item) => item.id === event.target.value);
         contentId = null;
         activeParagraph = 0;

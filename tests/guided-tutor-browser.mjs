@@ -213,6 +213,91 @@ test('all guided actions show a local missing-title message without requests', a
   assert.equal(sent.length, 0);
 });
 
+test('guided title search keeps its DOM input, focus and draft through continuous Chinese typing', async (t) => {
+  const page = await fixture(t, B.ESSAY);
+  await page.locator('[data-training-filter="grade"]').selectOption('4');
+  const originalTopic = await page.locator('#training-topic').inputValue();
+  const draft = '我认真参加班级服务，帮助大家整理图书。';
+  await page.locator('#guided-line').fill(draft);
+  const search = page.locator('[data-training-filter="search"]');
+  await search.evaluate((element) => {
+    window.__guidedTitleSearchInput = element;
+  });
+  await search.focus();
+
+  for (const [index, character] of [...'班级服务'].entries()) {
+    await page.keyboard.insertText(character);
+    assert.equal(await search.inputValue(), '班级服务'.slice(0, index + 1));
+    assert.equal(
+      await page.evaluate(
+        () =>
+          window.__guidedTitleSearchInput.isConnected &&
+          document.activeElement === window.__guidedTitleSearchInput &&
+          document.querySelector('[data-training-filter="search"]') === window.__guidedTitleSearchInput,
+      ),
+      true,
+    );
+  }
+  assert.ok((await page.locator('#training-topic').allTextContents()).some((text) => text.includes('一次班级服务')));
+  assert.equal(await page.locator('#guided-line').inputValue(), draft);
+  await page.locator('#training-topic').focus();
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.__guidedTitleSearchInput.isConnected &&
+        document.querySelector('[data-training-filter="search"]') === window.__guidedTitleSearchInput,
+    ),
+    true,
+  );
+  await search.focus();
+
+  await page.keyboard.press('Backspace');
+  assert.equal(await search.inputValue(), '班级服');
+  await page.keyboard.press('Control+A');
+  await page.keyboard.press('Backspace');
+  assert.equal(await search.inputValue(), '');
+  assert.equal(await page.locator('#training-topic').inputValue(), originalTopic);
+
+  await search.evaluate((element) => {
+    element.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    element.value = '班';
+    element.dispatchEvent(new InputEvent('input', { bubbles: true, data: '班', isComposing: true }));
+  });
+  assert.equal(await search.inputValue(), '班');
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.__guidedTitleSearchInput.isConnected &&
+        document.activeElement === window.__guidedTitleSearchInput,
+    ),
+    true,
+  );
+  await search.evaluate((element) => {
+    element.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '班' }));
+    element.dispatchEvent(new InputEvent('input', { bubbles: true, data: '班', isComposing: false }));
+  });
+  assert.equal(await page.locator('#training-topic').locator('option').count() > 0, true);
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.__guidedTitleSearchInput.isConnected &&
+        document.activeElement === window.__guidedTitleSearchInput,
+    ),
+    true,
+  );
+
+  await search.fill('班级服务');
+  const classServiceTopic = await page.locator('#training-topic option').evaluateAll((options) =>
+    options.find((option) => option.textContent.includes('一次班级服务'))?.value,
+  );
+  assert.ok(classServiceTopic);
+  await page.locator('#training-topic').selectOption(classServiceTopic);
+  assert.match(await page.locator('.guided-topic h3').textContent(), /一次班级服务/);
+  await page.locator('[data-training-filter="search"]').fill('');
+  await page.locator('#training-topic').selectOption(originalTopic);
+  assert.equal(await page.locator('#guided-line').inputValue(), draft);
+});
+
 test('paragraph review displays gentle title relevance feedback without rewriting off-topic student text', async (t) => {
   const page = await forestFixture(t);
   const sports = '星期一学校举行运动会，我参加了一百米赛跑。';
