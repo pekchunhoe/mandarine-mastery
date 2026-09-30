@@ -386,6 +386,10 @@
 .ai-dialog { overflow-wrap: anywhere; }
 .ai-dialog .ai-result { min-height: 130px; }
 .ai-dialog article { border-bottom: 1px solid var(--line); padding-block: 8px; }
+.ai-example-list { padding-left: 1.4em; }
+.ai-example { margin: 8px 0; }
+.ai-example-text { display: block; white-space: pre-wrap; }
+.ai-example-copy { min-height: 36px; margin-top: 6px; padding: 6px 10px; font-size: var(--text-sm); }
 .ai-dialog .modal-close { position: sticky; top: 0; background: var(--paper); min-width: 44px; min-height: 44px; z-index: 1; }
 .ai-dialog h2 { padding-right: 44px; }
 .ai-dialog .action-bar { flex-wrap: wrap; }

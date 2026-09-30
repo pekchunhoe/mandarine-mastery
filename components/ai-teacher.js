@@ -43,6 +43,19 @@ export const aiToolbar = (
     : '点击后会提交相关写作内容取得建议。请勿填写个人资料；由你来决定怎样修改。') +
   '</p></section>';
 const list = (items) => '<ul>' + items.map((item) => '<li>' + e(item) + '</li>').join('') + '</ul>';
+const exampleList = (examples) =>
+  '<ul class="ai-example-list">' +
+  examples
+    .map(
+      (example, index) =>
+        '<li class="ai-example"><span class="ai-example-text">' +
+        e(example) +
+        '</span><button type="button" class="btn ai-example-copy" data-ai-example-copy="' +
+        index +
+        '">复制示例</button></li>',
+    )
+    .join('') +
+  '</ul>';
 const paragraph = (text) => '<p>' + e(text) + '</p>';
 const section = (title, html) => '<section><h3>' + title + '</h3>' + html + '</section>';
 const why = (text) =>
@@ -69,7 +82,7 @@ export function tutorResultHTML(action, data) {
   if (action === A.PARAGRAPH_HINT)
     return (
       section('💡 可以写什么', list(data.ideas)) +
-      section('✏️ 参考写法', list(data.examples)) +
+      section('✏️ 参考写法', exampleList(data.examples)) +
       section('🎯 小提醒', paragraph(data.studentTask))
     );
   if (data.original !== undefined) html += section('你的原句', paragraph(data.original));
@@ -281,6 +294,17 @@ export function attachAITeacher(root, { signal, getRequest }) {
                   : '未能复制，请长按参考写法选择文字复制',
               );
           };
+        content.querySelectorAll('[data-ai-example-copy]').forEach((button) => {
+          button.onclick = async () => {
+            const copied = await copyText(data.examples[Number(button.dataset.aiExampleCopy)]);
+            if (current())
+              toast(
+                copied
+                  ? '已复制 ✓'
+                  : '未能复制，请长按示例选择文字复制',
+              );
+          };
+        });
         refreshSpeech(modal);
       } catch (error) {
         if (!current()) return;

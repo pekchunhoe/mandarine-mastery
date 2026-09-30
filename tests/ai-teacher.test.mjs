@@ -2,6 +2,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { clearTeachingCache, paragraphTarget, requestTeaching } from '../js/ai-teacher.js';
 import { TUTOR_ACTION as A, TUTOR_ACTIVITY as B } from '../js/tutor-actions.js';
+import { tutorResultHTML } from '../components/ai-teacher.js';
+
+test('paragraph hint renders one copy control per structured example and retains multiline text', () => {
+  const html = tutorResultHTML(A.PARAGRAPH_HINT, {
+    ideas: ['先想一想发生了什么。'],
+    examples: ['第一句，保留标点。', '第一行。\n第二行！'],
+    studentTask: '选择一个方向，自己写。',
+  });
+  assert.equal((html.match(/data-ai-example-copy/g) || []).length, 2);
+  assert.match(html, /第一句，保留标点。/);
+  assert.match(html, /第一行。\n第二行！/);
+});
 
 test('paragraph target prefers selection, otherwise cursor, current paragraph then draft', () => {
   const value = '第一段。\n第二段。\n第三段。';

@@ -303,6 +303,40 @@ test('paragraph hint: three real stage payloads exclude rendered rain/elderly sc
   assert.equal(sent.length, 4);
 });
 
+test('paragraph hint examples copy independently without changing the draft or making another request', async (t) => {
+  const page = await forestFixture(t);
+  const sent = await mockTutor(page, (input, data) =>
+    input.action === A.PARAGRAPH_HINT
+      ? {
+          ...data,
+          examples: ['我先深吸一口气，慢慢走过去。', '我和弟弟对看一眼，我们决定再仔细听一听。'],
+        }
+      : data,
+  );
+  const before = await essayState(page);
+  await page.evaluate(() => {
+    window.paragraphHintCopies = [];
+    navigator.clipboard.writeText = async (text) => window.paragraphHintCopies.push(text);
+  });
+  await clickAI(page, A.PARAGRAPH_HINT);
+  await done(page);
+  const copies = page.locator('[data-ai-example-copy]');
+  assert.equal(await copies.count(), 2);
+  await copies.nth(0).click();
+  await page.waitForFunction(() => window.paragraphHintCopies.length === 1);
+  assert.equal(await page.evaluate(() => window.paragraphHintCopies[0]), '我先深吸一口气，慢慢走过去。');
+  assert.equal(await page.locator('#toast').textContent(), '已复制 ✓');
+  await copies.nth(1).focus();
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => window.paragraphHintCopies.length === 2);
+  assert.equal(
+    await page.evaluate(() => window.paragraphHintCopies[1]),
+    '我和弟弟对看一眼，我们决定再仔细听一听。',
+  );
+  assert.equal(sent.length, 1);
+  assert.deepEqual(await essayState(page), before);
+});
+
 test('paragraph hint: missing prior story stays local without scaffold fallback', async (t) => {
   const page = await forestFixture(t),
     sent = await mockTutor(page);
