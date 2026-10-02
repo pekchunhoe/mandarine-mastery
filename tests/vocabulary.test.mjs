@@ -12,7 +12,7 @@ import { createVocabularyService } from '../js/vocabulary-service.js';
 import { readVocabularyFile, toCSV, toXLSX, parseCSV } from '../js/vocabulary-file.js';
 import { overlayWords, exportRecords } from '../js/vocabulary-store.js';
 import { practiceExample } from '../data/content.js';
-import * as XLSX from '../vendor/xlsx.mjs';
+import * as XLSX from 'xlsx';
 import { aggregate, emptyRecord, recordAttempt } from '../js/mastery.js';
 import { freshState } from '../js/storage.js';
 const raw = {

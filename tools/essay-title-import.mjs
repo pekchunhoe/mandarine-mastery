@@ -1,7 +1,8 @@
 import { copyFile, mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as XLSX from '../vendor/xlsx.mjs';
+// Node tools use the locked package; vendor/ is generated later for the browser.
+import * as XLSX from 'xlsx';
 
 export const root = fileURLToPath(new URL('..', import.meta.url));
 export const masterWorkbook = path.join(root, 'data/Mandarin_Essay_Master_1000_Titles.xlsx');

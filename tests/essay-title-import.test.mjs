@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import * as XLSX from '../vendor/xlsx.mjs';
+import * as XLSX from 'xlsx';
 import {
   columns, contentColumns, countCompositionCharacters, enforceRemovalGuard, importEssayTitles, readEssayWorkbook,
 } from '../tools/essay-title-import.mjs';
