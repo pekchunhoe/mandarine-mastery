@@ -72,14 +72,14 @@ Read **[the teacher vocabulary guide](docs/vocabulary-library.md)** for validati
 
 ## Adding Essay Titles and Model Essays
 
-1. Open `data/master-essay-titles.xlsx`.
+1. Open `data/Mandarin_Essay_Master_1000_Titles.xlsx`.
 2. In `EssayTitles`, add or edit one title per row. Give a new title a permanent, unique ID; never reuse or change an existing ID.
 3. In `EssayContents`, add or edit one model essay per row. Give it a permanent unique `content_id`, link it with the existing `EssayTitles.id` in `essay_id`, and put the whole essay in the `content` cell. Several model essays may share one `essay_id`.
 4. Save the workbook.
 5. Run `npm run essays:update`.
 6. Run `npm test` and `npm run build` before deployment, or run `npm run essays:release` for all three steps.
 
-**DO EDIT:** `data/master-essay-titles.xlsx`  
+**DO EDIT:** `data/Mandarin_Essay_Master_1000_Titles.xlsx`<br>
 **DO NOT EDIT MANUALLY:** `data/essay-titles.json` or `data/essay-contents.json` (generated)  
 **GENERATED DURING BUILD:** `dist/data/essay-titles.json` and `dist/data/essay-contents.json`
 

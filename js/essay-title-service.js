@@ -7,6 +7,7 @@ const categoryGroups = Object.freeze({
   自然: ['户外自然', '动物', '环保'], 成长: ['成长责任'], 想象: ['想象', '看图作文'],
 });
 const groupedCategories = new Set(Object.values(categoryGroups).flat());
+const titleById = new Map(records.map((record) => [record.id, record]));
 // Existing broad groups stay first; new Excel-only categories gain a direct filter automatically.
 export const essayCategories = Object.freeze([
   '全部', '生活', '家庭', '学校', '人物', '经历', '活动', '自然', '成长', '想象',
@@ -27,7 +28,7 @@ export function getEssayTitles({ grade, category, theme, essayType, difficulty, 
     (difficulty == null || difficulty === '' || Number(title.difficulty) === Number(difficulty)) &&
     (!activityTag || title.activityTags.includes(activityTag))));
 }
-export function getEssayTitleById(id) { return records.find((title) => title.id === id); }
+export function getEssayTitleById(id) { return titleById.get(id); }
 export const getActiveEssayTitles = () => getEssayTitles();
 export const getEssayTitlesByGrade = (grade) => getEssayTitles({ grade });
 export const getEssayTitlesByCategory = (category) => getEssayTitles({ category });

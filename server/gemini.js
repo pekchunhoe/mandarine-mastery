@@ -90,7 +90,7 @@ export async function generateTeachingResult(input, { apiKey, model, signal, onD
   const result = await ai.interactions.create(
     {
       model,
-      system_instruction: `${systemInstruction}\n${actions[input.action].instruction}`,
+      system_instruction: `${systemInstruction}${input.activity === 'guidedEssay' ? '\n如提供essayGrade和essayType，按题目实际Standard和文体调整语言难度、结构与格式建议。书信、演讲稿、日记、状物、写景和说明文不强加记叙文的起因、经过、结果。' : ''}\n${actions[input.action].instruction}`,
       input: JSON.stringify({
         activity: input.activity,
         context: input.context,

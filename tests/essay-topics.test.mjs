@@ -5,7 +5,7 @@ import { vocabularyService } from '../js/vocabulary-service.js';
 import { clearEssayVocabularyCache, recommendEssayVocabulary } from '../js/essay-vocabulary-service.js';
 
 test('essay topic library has valid, unique, grade-specific metadata', () => {
-  assert.equal(essayTopics.length, 300);
+  assert.equal(essayTopics.length, 1000);
   assert.equal(new Set(essayTopics.map((topic) => topic.id)).size, essayTopics.length);
   assert.equal(new Set(essayTopics.map((topic) => topic.title)).size, essayTopics.length);
   for (const topic of essayTopics) {
@@ -13,13 +13,13 @@ test('essay topic library has valid, unique, grade-specific metadata', () => {
     assert.ok(Number.isInteger(topic.gradeMin) && topic.gradeMin >= 1 && topic.gradeMin <= 6);
     assert.ok(Number.isInteger(topic.gradeMax) && topic.gradeMax >= topic.gradeMin && topic.gradeMax <= 6);
     assert.ok(topic.category.trim());
-    assert.ok(topic.keywords.length && topic.keywords.every((keyword) => keyword.trim()));
-    assert.ok(topic.writingFunctions.length);
+    assert.ok(topic.keywords.every((keyword) => keyword.trim()));
+    assert.deepEqual(topic.writingFunctions, topic.writingGuidance);
   }
-  for (const grade of [1, 2, 3, 4, 5, 6]) assert.equal(topicsForGrade(grade).length, 50);
+  for (const [index, count] of [100, 140, 180, 190, 190, 200].entries()) assert.equal(topicsForGrade(index + 1).length, count);
   assert.ok(topicMatchesCategory(topicsForGrade(3)[0], '全部'));
   assert.ok(essayCategories.includes('想象'));
-  assert.equal(getActiveEssayTitles().length, 300);
+  assert.equal(getActiveEssayTitles().length, 1000);
   assert.equal(getEssayTitleById(essayTopics[0].id).title, essayTopics[0].title);
   assert.ok(getEssayTitlesByCategory('家庭').length);
   assert.ok(getEssayTitlesByType('看图作文').length);

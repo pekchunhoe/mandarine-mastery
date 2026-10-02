@@ -7,6 +7,8 @@ const ASSETS = [
   './data/vocabulary.json',
   './data/content.js',
   './data/activities.js',
+  './data/essay-titles.json',
+  './data/essay-contents.json',
   './data/sentence-scenarios.js',
   './styles/base.css',
   './styles/layout.css',
@@ -23,6 +25,10 @@ const ASSETS = [
   './js/mastery.js',
   './js/speech-service.js',
   './js/essay-sentence-service.js',
+  './js/essay-title-service.js',
+  './js/essay-content-service.js',
+  './js/essay-training-service.js',
+  './js/essay-draft-service.js',
   './js/writing-checks.js',
   './js/views.js',
   './js/session.js',
@@ -49,6 +55,7 @@ const ASSETS = [
   './activities/semantic.js',
   './activities/connectors.js',
   './activities/writing.js',
+  './activities/essayTraining.js',
   './activities/treasure.js',
 ];
 self.addEventListener('install', (event) => {

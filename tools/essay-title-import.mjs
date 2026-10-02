@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import * as XLSX from '../vendor/xlsx.mjs';
 
 export const root = fileURLToPath(new URL('..', import.meta.url));
-export const masterWorkbook = path.join(root, 'data/master-essay-titles.xlsx');
+export const masterWorkbook = path.join(root, 'data/Mandarin_Essay_Master_1000_Titles.xlsx');
 export const runtimeDataset = path.join(root, 'data/essay-titles.json');
 export const runtimeContentDataset = path.join(root, 'data/essay-contents.json');
 export const importReport = path.join(root, 'test-results/essay-title-import-report.json');
@@ -45,6 +45,7 @@ const defaultEssayType = (category) => category === '看图作文' ? '看图作�
 
 // Counts Chinese characters plus letters/numbers, excluding whitespace and punctuation.
 export const countCompositionCharacters = (value) => [...String(value ?? '').matchAll(/[\p{L}\p{N}]/gu)].length;
+export const countHanCharacters = (value) => (String(value ?? '').match(/\p{Script=Han}/gu) || []).length;
 
 export function normalizeRows(rows) {
   const ids = new Set(), logicalRecords = new Set(), records = [], duplicates = [];
@@ -69,7 +70,7 @@ export function normalizeRows(rows) {
       description: text(raw.description), suggestedKeywords: keywords, suggestedPhrases: split(raw.suggested_phrases),
       writingGuidance: guidance, activityTags: split(raw.activity_tags, /[,，；;]/), minWords, maxWords,
       active: activeValue(raw.active, row), sortOrder: numeric(raw.sort_order, 'sort_order', row, { integer: true }) ?? Number.MAX_SAFE_INTEGER,
-      notes: text(raw.notes), keywords: keywords.length ? keywords : [category], writingFunctions: guidance,
+      notes: text(raw.notes), keywords, writingFunctions: guidance,
     };
     const logicalKey = [title, record.gradeMin, record.gradeMax, category, record.essayType].join('\u0000');
     if (logicalRecords.has(logicalKey)) duplicates.push({ row, id, title });
@@ -84,7 +85,7 @@ export function normalizeContentRows(rows, titleIds) {
   const ids = new Set(), records = [], warnings = [];
   for (const { raw, row } of rows) {
     const contentId = text(raw.content_id), essayId = text(raw.essay_id);
-    const content = String(raw.content ?? '').replace(/\r\n?/g, '\n').trim();
+    const content = String(raw.content ?? '').replace(/\r\n?/g, '\n');
     if (!contentId) throw Error(`EssayContents Row ${row}: content_id cannot be blank.`);
     if (contentId.includes('\uFFFD')) throw Error(`EssayContents Row ${row}: content_id contains invalid Unicode.`);
     if (ids.has(contentId)) throw Error(`EssayContents Row ${row}: duplicate content_id “${contentId}”.`);
@@ -92,28 +93,53 @@ export function normalizeContentRows(rows, titleIds) {
     if (!essayId) throw Error(`EssayContents Row ${row}: essay_id cannot be blank.`);
     if (essayId.includes('\uFFFD')) throw Error(`EssayContents Row ${row}: essay_id contains invalid Unicode.`);
     if (!titleIds.has(essayId)) throw Error(`EssayContents Row ${row}: essay_id “${essayId}” does not exist in EssayTitles.`);
-    if (!content) throw Error(`EssayContents Row ${row}: content cannot be blank.`);
+    if (!content.trim()) throw Error(`EssayContents Row ${row}: content cannot be blank.`);
     if (content.includes('\uFFFD')) throw Error(`EssayContents Row ${row}: content contains invalid Unicode.`);
     const level = text(raw.level), version = text(raw.version);
     if (!level) throw Error(`EssayContents Row ${row}: level cannot be blank.`);
     if (!version) throw Error(`EssayContents Row ${row}: version cannot be blank.`);
     const suppliedCount = numeric(raw.word_count, 'word_count', row, { integer: true, sheet: 'EssayContents' });
     if (suppliedCount != null && suppliedCount < 0) throw Error(`EssayContents Row ${row}: word_count cannot be negative.`);
-    const wordCount = countCompositionCharacters(content);
-    if (suppliedCount != null && suppliedCount !== wordCount)
-      warnings.push({ row, contentId, type: 'word_count_normalized', supplied: suppliedCount, calculated: wordCount });
-    if (wordCount < 150 || wordCount > 600)
-      throw Error(`EssayContents Row ${row}: content length ${wordCount} is outside the allowed 150–600 range.`);
-    if (wordCount < 200 || wordCount > 400)
-      warnings.push({ row, contentId, type: 'length_outside_recommended_range', calculated: wordCount, recommended: '200–400', allowed: '150–600' });
+    const hanCharacterCount = countHanCharacters(content);
+    const wordCount = suppliedCount ?? hanCharacterCount;
+    if (suppliedCount != null && suppliedCount !== hanCharacterCount)
+      warnings.push({ row, contentId, type: 'word_count_mismatch', supplied: suppliedCount, calculated: hanCharacterCount, convention: 'Han characters; source count preserved' });
     const sortOrder = numeric(raw.sort_order, 'sort_order', row, { integer: true, sheet: 'EssayContents' });
     if (sortOrder != null && sortOrder < 0) throw Error(`EssayContents Row ${row}: sort_order cannot be negative.`);
     records.push({
-      contentId, essayId, contentTitle: text(raw.content_title), content, wordCount, level, version,
+      contentId, essayId, contentTitle: text(raw.content_title), content, wordCount, hanCharacterCount, level, version,
       active: activeValue(raw.active, row, 'EssayContents'), sortOrder: sortOrder ?? Number.MAX_SAFE_INTEGER, notes: text(raw.notes),
     });
   }
   return { records, warnings };
+}
+
+// Validate the authoritative catalogue before publishing either dataset.
+export function auditEssayCatalogue(titles, contents, { expectedDistribution } = {}) {
+  const errors = [], titleById = new Map(titles.map((item) => [item.id, item]));
+  if (titleById.size !== titles.length) errors.push('Duplicate title IDs');
+  if (new Set(titles.map((item) => item.title)).size !== titles.length) errors.push('Duplicate titles');
+  if (new Set(contents.map((item) => item.contentId)).size !== contents.length) errors.push('Duplicate content IDs');
+  const activeByTitle = new Map(), distribution = {};
+  for (const title of titles) if (title.active) distribution[title.grade] = (distribution[title.grade] || 0) + 1;
+  for (const content of contents) {
+    const title = titleById.get(content.essayId);
+    if (!title) errors.push(`Orphan content: ${content.contentId}`);
+    else if (Number(content.level) < title.gradeMin || Number(content.level) > title.gradeMax || !Number.isInteger(Number(content.level))) errors.push(`Standard mismatch: ${content.contentId}`);
+    if (!content.content.trim()) errors.push(`Empty content: ${content.contentId}`);
+    if (content.active) {
+      if (title && !title.active) errors.push(`Active content for inactive title: ${content.contentId}`);
+      activeByTitle.set(content.essayId, (activeByTitle.get(content.essayId) || 0) + 1);
+    }
+  }
+  for (const title of titles) if (title.active && activeByTitle.get(title.id) !== 1) errors.push(`Expected one active model essay: ${title.id}`);
+  if (expectedDistribution) {
+    for (const [grade, count] of Object.entries(expectedDistribution)) if (distribution[grade] !== count) errors.push(`Standard ${grade}: expected ${count}, got ${distribution[grade] || 0}`);
+    const total = Object.values(expectedDistribution).reduce((sum, count) => sum + count, 0);
+    if (titles.length !== total || contents.length !== total) errors.push(`Expected ${total} titles and contents`);
+  }
+  if (errors.length) throw Error(`Essay catalogue validation failed:\n${errors.join('\n')}`);
+  return { titleIds: titleById.size, uniqueTitles: new Set(titles.map((item) => item.title)).size, contentIds: contents.length, activeTitles: titles.filter((item) => item.active).length, activeContents: contents.filter((item) => item.active).length, distribution, missing: 0, orphaned: 0, incorrectlyPaired: 0 };
 }
 
 const rowsForWorksheet = (workbook, sheetName, requiredColumns) => {
@@ -162,25 +188,6 @@ export function enforceRemovalGuard(change, { allowRemovals = false } = {}) {
   if (!change.blocked || allowRemovals) return;
   throw Error(`Essay update aborted: ${change.removed.length} records (${(change.removalRate * 100).toFixed(1)}%) would be removed. No runtime data was changed. Review removed IDs/titles and rerun with --allow-removals only for an intentional deletion.`);
 }
-async function importEssayTitlesLegacy({ file = masterWorkbook, target = runtimeDataset, report = importReport, backupDirectory = path.join(root, 'docs/essay-title-backups'), allowRemovals = false } = {}) {
-  const existing = JSON.parse(await readFile(target, 'utf8'));
-  const { records, duplicates } = normalizeRows(await readEssayWorkbook(file));
-  const change = analyzeEssayChange(existing, records);
-  const compact = (list) => list.map(({ id, title }) => ({ id, title }));
-  await mkdir(path.dirname(report), { recursive: true });
-  await writeFile(report, JSON.stringify({ file: path.relative(root, file), records: records.length, duplicateRecords: duplicates, change: { ...change, added: compact(change.added), updated: compact(change.updated), removed: compact(change.removed) } }, null, 2) + '\n', 'utf8');
-  console.log(`Current: ${change.current}\nExcel: ${change.imported}\nNew: ${change.added.length}\nUpdated: ${change.updated.length}\nRemoved: ${change.removed.length}\nDuplicate logical records reported: ${duplicates.length}`);
-  if (change.removed.length) console.warn(`Removed records:\n${change.removed.map(({ id, title }) => `${id}  ${title}`).join('\n')}`);
-  enforceRemovalGuard(change, { allowRemovals });
-  await mkdir(backupDirectory, { recursive: true });
-  const backup = path.join(backupDirectory, `essay-titles-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
-  await copyFile(target, backup);
-  const temporary = `${target}.tmp`;
-  await writeFile(temporary, JSON.stringify(records, null, 2) + '\n', 'utf8');
-  await rename(temporary, target);
-  console.log(`Updated ${change.current} → ${records.length}. Backup: ${path.relative(root, backup)}`);
-  return { records, duplicates, change, backup };
-}
 const readDataset = async (file, fallback = []) => {
   try { return JSON.parse(await readFile(file, 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return fallback; throw error; }
@@ -203,6 +210,8 @@ export async function importEssayTitles({
   const [existingTitles, existingContents, workbookRows, generatedContentIds] = await Promise.all([readDataset(target), readDataset(contentTarget), readEssayWorkbookData(file), readContentImportState(state)]);
   const { records: titles, duplicates } = normalizeRows(workbookRows.titleRows);
   const { records: contents, warnings } = normalizeContentRows(workbookRows.contentRows, new Set(titles.map(({ id }) => id)));
+  const audit = path.resolve(file) === path.resolve(masterWorkbook)
+    ? auditEssayCatalogue(titles, contents, { expectedDistribution: { 1: 100, 2: 140, 3: 180, 4: 190, 5: 190, 6: 200 } }) : null;
   const change = analyzeEssayChange(existingTitles, titles);
   const contentChange = analyzeEssayContentChange(existingContents, contents);
   const runtimeOnlyContents = generatedContentIds.size ? existingContents.filter(({ contentId }) => !generatedContentIds.has(contentId)) : [];
@@ -214,7 +223,7 @@ export async function importEssayTitles({
   const compactContent = (list) => compactContents(list, titleById);
   await mkdir(path.dirname(report), { recursive: true });
   await writeFile(report, JSON.stringify({
-    file: path.relative(root, file), titleRecords: titles.length, contentRecords: contents.length,
+    file: path.relative(root, file), titleRecords: titles.length, contentRecords: contents.length, audit,
     duplicateTitleRecords: duplicates, contentWarnings: warnings,
     titles: compactChange(change, compactTitles), contents: compactChange(contentChange, compactContent),
     contentRemovalGuard: compactChange(contentGuardChange, compactContent), runtimeOnlyContents: compactContent(runtimeOnlyContents),

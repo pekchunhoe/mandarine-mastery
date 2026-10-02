@@ -66,7 +66,7 @@ test('essay contents import with stable foreign keys, Unicode, multiple versions
   assert.equal(result.contents.length, 2);
   assert.equal(result.contents[0].essayId, 'essay-keep');
   assert.equal(result.contents[0].content, validSampleContent);
-  assert.equal(result.contents[0].wordCount, countCompositionCharacters(validSampleContent));
+  assert.equal(result.contents[0].wordCount, (validSampleContent.match(/\p{Script=Han}/gu) || []).length);
   assert.equal(JSON.parse(await readFile(contentTarget, 'utf8'))[1].active, false);
 });
 
@@ -128,7 +128,7 @@ test('essay contents reject blank IDs/content and malformed numeric fields while
   assert.match(JSON.parse(await readFile(contentTarget, 'utf8'))[0].content, /\n回家的路上/);
 });
 
-test('essay contents outside the 150–600 allowed range are rejected before either runtime dataset changes', async () => {
+test('essay lengths do not rewrite or reject source text based on an obsolete global length limit', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'essay-content-length-'));
   const target = path.join(directory, 'essay-titles.json'), contentTarget = path.join(directory, 'essay-contents.json');
   const beforeTitles = JSON.stringify([{ id: 'essay-keep', title: 'retained' }]);
@@ -136,9 +136,9 @@ test('essay contents outside the 150–600 allowed range are rejected before eit
   await writeFile(target, beforeTitles); await writeFile(contentTarget, beforeContents);
   const tooShort = contentRow('short-content', 'essay-keep'); tooShort[3] = 'x'.repeat(149);
   const source = await makeWorkbook(directory, [row('essay-keep', 'retained')], 'too-short.xlsx', [tooShort]);
-  await assert.rejects(importEssayTitles({ file: source, target, contentTarget, report: path.join(directory, 'report.json') }), /outside the allowed 150–600 range/);
-  assert.equal(await readFile(target, 'utf8'), beforeTitles);
-  assert.equal(await readFile(contentTarget, 'utf8'), beforeContents);
+  const result = await importEssayTitles({ file: source, target, contentTarget, report: path.join(directory, 'report.json'), backupDirectory: path.join(directory, 'backups'), allowRemovals: true });
+  assert.equal(result.contents[0].content, 'x'.repeat(149));
+  assert.equal(result.contents[0].hanCharacterCount, 0);
 });
 
 test('essay importer rejects malformed titles and duplicate IDs without altering runtime data', async () => {

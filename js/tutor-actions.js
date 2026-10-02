@@ -112,6 +112,7 @@ export const MAX_CONTEXT_TEXT = 8000;
 export const MIN_ESSAY_CHARACTERS = 50;
 export const textLimits = Object.freeze({
   selectedTitle: 160,
+  essayType: 80,
   paragraphStage: 16,
   currentStudentParagraph: 2000,
   topic: 160,
@@ -150,7 +151,8 @@ export function tutorRequest(action, activity, raw = {}) {
   )
     invalid();
   const context = {};
-  for (const field of spec.fieldsByActivity?.[activity] || spec.fields) {
+  const fields = spec.fieldsByActivity?.[activity] || spec.fields;
+  for (const field of activity === B.ESSAY ? [...fields, 'essayGrade', 'essayType'] : fields) {
     const value = raw[field];
     if (value === undefined) continue;
     if (field in textLimits) {
@@ -167,7 +169,7 @@ export function tutorRequest(action, activity, raw = {}) {
         invalid();
       context[field] = field === 'availableVocabularyIds' ? [...new Set(value)] : [...value];
     } else {
-      if (!Number.isInteger(value) || value < 1 || value > 100) invalid();
+      if (!Number.isInteger(value) || value < 1 || value > (field === 'essayGrade' ? 6 : 100)) invalid();
       context[field] = value;
     }
   }

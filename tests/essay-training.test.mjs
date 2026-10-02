@@ -166,8 +166,8 @@ test('active workbook essay contents are present, linked, Unicode-safe and prese
   const activeTitles = titles.filter((title) => title.active);
   const activeContents = contents.filter((content) => content.active);
   const titleIds = new Set(titles.map((title) => title.id));
-  assert.equal(activeTitles.length, 300);
-  assert.equal(activeContents.length, 300);
+  assert.equal(activeTitles.length, 1000);
+  assert.equal(activeContents.length, 1000);
   assert.equal(new Set(contents.map((content) => content.contentId)).size, contents.length);
   for (const content of activeContents) {
     assert.ok(titleIds.has(content.essayId));

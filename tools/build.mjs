@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import './prepare-vocabulary.mjs';
+import { auditEssayCatalogue, normalizeRows, normalizeContentRows, readEssayWorkbookData, masterWorkbook } from './essay-title-import.mjs';
 import { createVocabularyService } from '../js/vocabulary-service.js';
 const root = fileURLToPath(new URL('..', import.meta.url)),
   out = path.join(root, 'dist');
@@ -21,14 +22,22 @@ const source = [
 const records = JSON.parse(await readFile(path.join(root, 'data/vocabulary.json'), 'utf8'));
 if (!records.length) throw Error('Cannot build an empty vocabulary library');
 createVocabularyService(records);
+const workbook = await readEssayWorkbookData(masterWorkbook);
+const sourceTitles = normalizeRows(workbook.titleRows).records;
+const sourceContents = normalizeContentRows(workbook.contentRows, new Set(sourceTitles.map((title) => title.id))).records;
+auditEssayCatalogue(sourceTitles, sourceContents, { expectedDistribution: { 1: 100, 2: 140, 3: 180, 4: 190, 5: 190, 6: 200 } });
+for (const [name, expected] of [['essay-titles', sourceTitles], ['essay-contents', sourceContents]]) {
+  if (JSON.stringify(JSON.parse(await readFile(path.join(root, `data/${name}.json`), 'utf8'))) !== JSON.stringify(expected)) throw Error(`Stale ${name}. Run npm run essays:update before building.`);
+}
 await mkdir(out, { recursive: true });
 await rm(path.join(out, 'data', 'master-vocabulary.xlsx'), { force: true });
-await rm(path.join(out, 'data', 'master-essay-titles.xlsx'), { force: true });
+// Remove source workbooks left behind by older builds; ship generated data only.
+for (const file of await readdir(path.join(out, 'data')).catch(() => [])) if (/\.xlsx$/i.test(file)) await rm(path.join(out, 'data', file), { force: true });
 for (const name of source)
   await cp(path.join(root, name), path.join(out, name), {
     recursive: true,
     filter: (from) =>
-      name !== 'data' || !['master-vocabulary.xlsx', 'master-essay-titles.xlsx'].includes(path.basename(from)),
+      name !== 'data' || !/\.xlsx$/i.test(path.basename(from)),
   });
 if (!(await readFile(path.join(out, 'data/vocabulary.json'))).equals(await readFile(path.join(root, 'data/vocabulary.json'))))
   throw Error('Production vocabulary differs from runtime vocabulary');

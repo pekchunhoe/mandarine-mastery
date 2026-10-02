@@ -50,8 +50,9 @@ export function deriveParagraphTraining(paragraph, index, total, topic = {}) {
   const sentences = splitEssaySentences(paragraph);
   const representativeSentence = sentences[0] || paragraph;
   const keyPoints = [...new Set(sentences.slice(0, 3).map((sentence) => shorten(sentence)).filter(Boolean))].slice(0, 3);
-  const label = paragraphLabel(paragraph, index, total);
-  const role = label === '开头'
+  const narrative = isNarrativeTopic(topic);
+  const label = narrative ? paragraphLabel(paragraph, index, total) : `第${index + 1}段`;
+  const role = !narrative ? `围绕题目写清楚这一部分，注意${topic.essayType || '所选文体'}的表达和格式。` : label === '开头'
     ? '介绍人物、时间、地点或背景。'
     : label.includes('结尾')
       ? '写结果、感受或想法，让文章完整。'
@@ -71,24 +72,36 @@ export function deriveParagraphTraining(paragraph, index, total, topic = {}) {
   };
 }
 
+export function isNarrativeTopic(topic = {}) {
+  return (!topic.essayType || /^(命题作文|记叙文|想象作文|看图作文|游记)$/.test(topic.essayType)) && !/日记|演讲|书信|一封信|写信/.test(topic.title || '');
+}
+
 export function deriveEssayTraining(content, topic = {}) {
   const paragraphs = splitEssayParagraphs(content.content);
+  const narrative = isNarrativeTopic(topic);
   return {
     essayId: content.essayId,
     contentId: content.contentId,
     paragraphCount: paragraphs.length,
     paragraphs: paragraphs.map((paragraph, index) => deriveParagraphTraining(paragraph, index, paragraphs.length, topic)),
-    writingQuestions: [
+    scaffoldSource: '本地学习支架（根据文体与范文段落生成）',
+    writingQuestions: narrative ? [
       `你想围绕《${topic.title || content.contentTitle || '这个题目'}》写谁或什么？`,
       '事情是在什么时候、哪里发生的？',
       '事情怎样开始，又怎样发展？',
       '最后结果怎样？你有什么感受？',
-    ],
-    sentenceStarters: ['有一天，……', '有一次，……', '当我……的时候，……', '我发现……', '后来，……', '最后，……', '从这件事中，我明白……', '我觉得……', '我希望以后……'],
+    ] : [`《${topic.title || content.contentTitle}》想表达什么？`, `这篇${topic.essayType || '文章'}写给谁看？要注意什么格式？`, '每一部分要写什么内容或细节？', '怎样安排内容，读者才容易明白？'],
+    sentenceStarters: narrative ? ['有一天，……', '有一次，……', '当我……的时候，……', '我发现……', '后来，……', '最后，……', '从这件事中，我明白……', '我觉得……', '我希望以后……'] : ['我想介绍……', '例如，……', '我注意到……', '我认为……'],
+    checklist: narrative ? ['我有写清楚人物或事情。', '我有分段。', '事情有开始、经过和结果。', '我用了完整句子。', '我写了自己的感受。', '我检查了错别字。', '我的结尾完整。'] : ['内容围绕题目。', '段落安排清楚。', `我注意了${topic.essayType || '文章'}的格式。`, '我用了完整句子。', '细节和说明清楚。', '我检查了错别字。', '文章表达完整。'],
   };
 }
 
-export const writingLengthGuidance = (count) => {
+export const writingLengthGuidance = (count, topic) => {
+  if (topic) {
+    if (topic.minWords != null && count < topic.minWords) return `题目建议至少 ${topic.minWords} 字。`;
+    if (topic.maxWords != null && count > topic.maxWords) return `题目建议不超过 ${topic.maxWords} 字。`;
+    return topic.gradeMin <= 2 ? '先用完整句子写清楚自己的内容。' : `按${topic.essayType || '文章'}的特点安排段落，补充清楚、相关的细节。`;
+  }
   if (count < 150) return '还太短了，试着补充事情的经过和感受。';
   if (count < 200) return '可以再丰富一点；200–400字最合适。';
   if (count <= 400) return '字数在推荐范围内。';

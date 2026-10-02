@@ -152,7 +152,9 @@ test('all seven guided actions carry the selected title and student writing with
             : request.action === A.VOCABULARY_HELP
               ? ['selectedTitle', 'studentParagraph', 'availableVocabularyIds']
               : ['selectedTitle', 'studentParagraph', 'previousStudentParagraph'];
-      assert.deepEqual(Object.keys(c), fields);
+      assert.deepEqual(Object.keys(c), [...fields, 'essayGrade', 'essayType']);
+      assert.equal(c.essayGrade, 3);
+      assert.equal(c.essayType, '命题作文');
       if (request.action === A.ESSAY_REVIEW) assert.equal(c.studentEssay, writing.join('\n\n'));
       else if (request.action === A.PARAGRAPH_HINT) {
         assert.equal(c.paragraphStage, 'result');
@@ -216,6 +218,9 @@ test('all guided actions show a local missing-title message without requests', a
 test('guided title search keeps its DOM input, focus and draft through continuous Chinese typing', async (t) => {
   const page = await fixture(t, B.ESSAY);
   await page.locator('[data-training-filter="grade"]').selectOption('4');
+  // Filtering retains the current title; explicitly select a Standard 4 title.
+  const grade4Id = await page.locator('#training-topic option').nth(1).getAttribute('value');
+  await page.locator('#training-topic').selectOption(grade4Id);
   const originalTopic = await page.locator('#training-topic').inputValue();
   const draft = '我认真参加班级服务，帮助大家整理图书。';
   await page.locator('#guided-line').fill(draft);
@@ -372,6 +377,8 @@ test('paragraph hint: three real stage payloads exclude rendered rain/elderly sc
         paragraphStage: ['opening', 'result', 'ending'][index],
         currentStudentParagraph: await page.locator('#guided-line').inputValue(),
         previousStudentParagraphs: forestStory.slice(0, index),
+        essayGrade: 3,
+        essayType: '命题作文',
       },
     });
     assert.doesNotMatch(
@@ -578,6 +585,8 @@ test('forest paragraph expansion and vivid tools use P2, copy safely and change 
     assert.equal(input.context.studentParagraph, forest[1]);
     assert.equal(input.context.previousStudentParagraph, forest[0]);
     assert.deepEqual(Object.keys(input.context).sort(), [
+      'essayGrade',
+      'essayType',
       'previousStudentParagraph',
       'selectedTitle',
       'studentParagraph',
@@ -919,7 +928,7 @@ test('three-paragraph essay: paragraph tools stay beside paragraph 2 and send on
   await done(page);
   const essayReview = sent.at(-1);
   assert.equal(essayReview.context.studentEssay, paragraphs.join('\n\n'));
-  assert.deepEqual(Object.keys(essayReview.context), ['selectedTitle', 'studentEssay']);
+  assert.deepEqual(Object.keys(essayReview.context), ['selectedTitle', 'studentEssay', 'essayGrade', 'essayType']);
   for (const label of ['切题', '结构', '描写', '词语', '语言', '优先修改'])
     assert.match(await page.locator('.ai-result').textContent(), new RegExp(label));
   await close(page);

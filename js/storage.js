@@ -18,6 +18,7 @@ export function freshState() {
     records: {},
     history: [],
     drafts: {},
+    essaySelections: {},
     favorites: [],
     tray: [],
     recent: [],
@@ -32,6 +33,8 @@ export function freshState() {
 export function hydrate(raw) {
   const base = freshState();
   if (!raw || raw.version !== 1) return base;
+  if (raw.essaySelections && typeof raw.essaySelections === 'object')
+    base.essaySelections = Object.fromEntries(Object.entries(raw.essaySelections).filter(([, value]) => typeof value === 'string'));
   if (raw.settings && typeof raw.settings === 'object') {
     for (const [key, allowed] of Object.entries({
       grade: ['1', '2', '3', '4', '5', '6', 'mixed'],

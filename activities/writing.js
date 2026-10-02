@@ -1,6 +1,8 @@
 import { vocabularyService } from '../js/vocabulary-service.js';
 import { escapeHTML as e, highlight, unique, normalize, download } from '../js/utils.js';
 import { state, persist, vocabulary } from '../js/state.js';
+import { resolveWritingDraft } from '../js/essay-draft-service.js';
+import { isNarrativeTopic } from '../js/essay-training-service.js';
 import { practiceExample } from '../data/content.js';
 import { essayCategories, essayTopics, topicMatchesCategory, topicsForGrade } from '../js/essay-title-service.js';
 import { getActiveEssayContentsByEssayId } from '../js/essay-content-service.js';
@@ -10,7 +12,7 @@ import { recommendEssayVocabulary } from '../js/essay-vocabulary-service.js';
 import { checkWriting, productionEligible } from '../js/writing-checks.js';
 import { enableDrag } from '../components/drag.js';
 
-const planFields = [
+const narrativePlanFields = [
   ['time', '时间', '什么时候？'],
   ['place', '地点', '在哪里？'],
   ['who', '人物', '有哪些人？'],
@@ -18,6 +20,15 @@ const planFields = [
   ['action', '经过', '你做了什么？遇到什么转折？'],
   ['result', '结果', '后来怎样了？'],
   ['feeling', '感受', '你有什么感受或收获？'],
+];
+const genrePlanFields = (topic) => isNarrativeTopic(topic) ? narrativePlanFields : [
+  ['time', '日期或背景', '文体需要日期或背景吗？'],
+  ['place', '主题', '围绕什么主题来写？'],
+  ['who', '读者或对象', '写给谁看，或介绍谁、什么？'],
+  ['start', '表达目的', '开头要让读者明白什么？'],
+  ['action', '主要内容', '有哪些细节、特点、观点或理由？'],
+  ['result', '内容安排', '怎样安排才清楚？'],
+  ['feeling', '收束与格式', '文体需要怎样的结尾和格式？'],
 ];
 const modelEssayHTML = (content) => splitEssayParagraphs(content)
   .map((paragraph) => `<p class="model-essay-text">${splitChineseSentences(paragraph).map((sentence) => `<span class="essay-sentence" data-essay-sentence>${e(sentence)}</span>`).join('')}</p>`)
@@ -46,16 +57,21 @@ export function writing(root, ctx) {
       ? themes.findIndex((t) => t.title === state.settings.essayTopic)
       : Number(ctx.params.get('theme')) || 0;
   themeIndex = Math.max(0, Math.min(themes.length - 1, themeIndex));
-  let theme = themes[themeIndex] || themes[0] || essayTopics[0],
+  const selectionKey = `${ctx.activity.id}:${ctx.params.toString()}`;
+  const selectedId = state.essaySelections?.[selectionKey] || ctx.params.get('topic') || state.essaySelections?.[ctx.activity.id];
+  let theme = essayTopics.find((topic) => topic.id === selectedId) || themes[themeIndex] || themes[0] || essayTopics[0],
     targets = [],
     draft,
     key;
   let saveTimer;
+  let planFields = genrePlanFields(theme);
   const paragraphMode = ctx.activity.id === 'paragraphBuilder',
     plannerMode = ctx.activity.id === 'planner';
   function load() {
-    key = `${paragraphMode ? 'paragraph' : 'composition'}:${state.settings.grade}:${state.settings.lesson}:${themeIndex < 4 ? themeIndex : encodeURIComponent(theme.title)}`;
-    draft = state.drafts[key] || {
+    planFields = genrePlanFields(theme);
+    const resolved = resolveWritingDraft(state.drafts, { activityId: ctx.activity.id, grade: state.settings.grade, lesson: state.settings.lesson, topic: theme });
+    key = resolved.key;
+    draft = resolved.draft || {
       text: '',
       plan: {},
       order: planFields.map((x) => x[0]),
@@ -68,7 +84,7 @@ export function writing(root, ctx) {
     draft.order = unique([...(draft.order || []), ...planFields.map((x) => x[0])]).filter((k) =>
       planFields.some((f) => f[0] === k),
     );
-    targets = writingTargets(ctx, theme, topicGrade, { function: vocabularyFunction });
+    targets = writingTargets(ctx, theme, theme.gradeMin, { function: vocabularyFunction });
 
     draft.targetIds = targets.map((w) => w.id);
     draft.selectedWordIds ||= [];
@@ -78,6 +94,8 @@ export function writing(root, ctx) {
     draft.grade = state.settings.grade;
     draft.lesson = state.settings.lesson;
     draft.title = theme.title;
+    draft.essayId = theme.id;
+    draft.essayGrade = theme.gradeMin;
     state.drafts[key] = draft;
     const ok = persist();
     const status = root.querySelector('#draft-status');
@@ -99,12 +117,17 @@ export function writing(root, ctx) {
     const modelEssayPanel = modelEssays.length
       ? `<details class="reference-details model-essay-reference"><summary>范文参考（${modelEssays.length}篇）</summary><p class="small muted">先自己构思；需要时再展开范文，比较写法和用词。</p>${modelEssays.map((essay) => `<article class="writing-preview"><div class="row between"><strong>${e(essay.contentTitle || `范文 ${essay.version}`)}</strong><span class="small muted">${e(essay.level)} · ${essay.wordCount}字</span></div>${modelEssayHTML(essay.content)}</article>`).join('')}</details>`
       : '';
-    root.innerHTML = `<h2>${paragraphMode ? '把想法变成一段话' : ctx.activity.id === 'assistant' ? '读一读，让作文更清楚' : plannerMode ? '先画一张故事地图' : '小小作文挑战'}</h2><section class="essay-topic-picker panel soft"><div class="row between"><strong>选择作文题目</strong><span class="small muted">${themes.length} 个题目</span></div><div class="essay-topic-controls"><label>年级<select id="essay-topic-grade">${[1,2,3,4,5,6].map((grade) => `<option value="${grade}" ${grade === topicGrade ? 'selected' : ''}>${['一','二','三','四','五','六'][grade - 1]}年级</option>`).join('')}</select></label><label class="topic-search">搜索作文题目<input id="essay-topic-search" type="search" value="${e(topicSearch)}" placeholder="搜索作文题目"></label></div><div class="topic-filter-row" aria-label="题目类别">${essayCategories.map((category) => `<button class="topic-filter ${category === topicCategory ? 'active' : ''}" data-topic-category="${e(category)}">${e(category)}</button>`).join('')}</div><label for="writing-theme">我想写的题目</label><select id="writing-theme">${themes.map((t, i) => `<option value="${i}" ${t.id === theme.id ? 'selected' : ''}>《${e(t.title)}》</option>`).join('')}</select></section><p class="question-instruction">${paragraphMode ? '试着写一个40–80字的小段落。' : '试着写一个80–120字的小故事。'}选用适合的词语，不必全部用上。</p><div class="panel soft essay-word-pocket"><div class="row between"><strong class="small">我的作文词语袋</strong><span class="small muted">${Math.min(wordOffset + 8, targets.length)} / ${targets.length} · 点词看用法</span></div><div class="topic-filter-row" aria-label="词语功能">${['全部','动作','心情','经过','转折','结果','感受'].map((name) => `<button class="topic-filter ${name === vocabularyFunction ? 'active' : ''}" data-word-function="${name}">${name}</button>`).join('')}</div><div class="word-pocket-grid" id="writing-targets">${visibleWords.map((w) => `<div class="word-pocket-item"><button class="word-chip tile" data-word-card="${e(w.id)}" data-drag="word-${e(w.id)}">${e(w.word)}</button><button class="word-add" data-select-word="${e(w.id)}" aria-label="加入作文词语 ${e(w.word)}">＋</button></div>`).join('')}</div><button class="btn quiet word-next" id="change-word-group" ${targets.length <= 8 ? 'disabled' : ''}>换一组</button>${selectedWords.length ? `<div class="selected-words"><strong class="small">已选词语</strong>${selectedWords.map((w) => `<button class="selected-word" data-remove-word="${e(w.id)}">${e(w.word)} ×</button>`).join('')}</div>` : ''}</div><details class="reference-details" id="planner-details" ${plannerMode || paragraphMode || !draft.text ? 'open' : ''}><summary>故事计划 · 时间 → 地点 → 人物 → 起因 → 经过 → 结果 → 感受</summary><p class="small muted">可以拖动卡片，也可以用 ↑ 调整计划顺序。只写对故事有帮助的内容。</p><div class="plan-grid">${draft.order.map(planCard).join('')}</div><div class="action-bar"><button class="btn primary" id="start-writing">开始写${paragraphMode ? '段落' : '作文'}</button><button class="btn" id="plan-to-draft">把计划复制为草稿</button></div></details><label for="essay-text">${paragraphMode ? '我的段落' : '我的作文'}</label><textarea class="writing-editor" id="essay-text" placeholder="把你经历或想象的故事写在这里。记得分句，加上标点。">${e(draft.text)}</textarea><div class="row between"><div id="writing-metrics" class="writing-metrics"></div><span class="save-status" id="draft-status">草稿保存在这台设备</span></div><details class="reference-details"><summary>看看用到的词语</summary><div class="writing-preview" id="writing-preview"></div></details><div class="action-bar"><button class="btn primary" id="check-writing">自动检查</button><button class="btn" id="export-writing">导出作文</button></div><div id="writing-report" class="notice" hidden aria-live="polite"></div><div class="self-assess"><h3>我自己读一读</h3>${[
+    root.innerHTML = `<h2>${paragraphMode ? '把想法变成一段话' : ctx.activity.id === 'assistant' ? '读一读，让作文更清楚' : plannerMode ? '先画一张故事地图' : '小小作文挑战'}</h2><section class="essay-topic-picker panel soft"><div class="row between"><strong>选择作文题目</strong><span class="small muted">${themes.length} 个题目</span></div><div class="essay-topic-controls"><label>年级<select id="essay-topic-grade">${[1,2,3,4,5,6].map((grade) => `<option value="${grade}" ${grade === topicGrade ? 'selected' : ''}>${['一','二','三','四','五','六'][grade - 1]}年级</option>`).join('')}</select></label><label class="topic-search">搜索作文题目<input id="essay-topic-search" type="search" value="${e(topicSearch)}" placeholder="搜索作文题目"></label></div><div class="topic-filter-row" aria-label="题目类别">${essayCategories.map((category) => `<button class="topic-filter ${category === topicCategory ? 'active' : ''}" data-topic-category="${e(category)}">${e(category)}</button>`).join('')}</div><label for="writing-theme">我想写的题目</label><select id="writing-theme">${!themes.some((t) => t.id === theme.id) ? `<option value="${e(theme.id)}" selected>《${e(theme.title)}》 · 当前题目（筛选结果以外）</option>` : ''}${themes.map((t) => `<option value="${e(t.id)}" ${t.id === theme.id ? 'selected' : ''}>《${e(t.title)}》</option>`).join('')}</select></section><p class="question-instruction">${paragraphMode ? '试着写一个小段落。' : `按${e(theme.essayType)}的特点表达自己的内容。`} · Standard ${theme.gradeMin}。选用适合的词语，不必全部用上。</p><div class="panel soft essay-word-pocket"><div class="row between"><strong class="small">我的作文词语袋</strong><span class="small muted">${Math.min(wordOffset + 8, targets.length)} / ${targets.length} · 点词看用法</span></div><div class="topic-filter-row" aria-label="词语功能">${['全部','动作','心情','经过','转折','结果','感受'].map((name) => `<button class="topic-filter ${name === vocabularyFunction ? 'active' : ''}" data-word-function="${name}">${name}</button>`).join('')}</div><div class="word-pocket-grid" id="writing-targets">${visibleWords.map((w) => `<div class="word-pocket-item"><button class="word-chip tile" data-word-card="${e(w.id)}" data-drag="word-${e(w.id)}">${e(w.word)}</button><button class="word-add" data-select-word="${e(w.id)}" aria-label="加入作文词语 ${e(w.word)}">＋</button></div>`).join('')}</div><button class="btn quiet word-next" id="change-word-group" ${targets.length <= 8 ? 'disabled' : ''}>换一组</button>${selectedWords.length ? `<div class="selected-words"><strong class="small">已选词语</strong>${selectedWords.map((w) => `<button class="selected-word" data-remove-word="${e(w.id)}">${e(w.word)} ×</button>`).join('')}</div>` : ''}</div><details class="reference-details" id="planner-details" ${plannerMode || paragraphMode || !draft.text ? 'open' : ''}><summary>${isNarrativeTopic(theme) ? '故事计划 · 时间 → 地点 → 人物 → 起因 → 经过 → 结果 → 感受' : `本地${e(theme.essayType)}写作计划 · 读者 → 目的 → 内容 → 格式`}</summary><p class="small muted">可以拖动卡片，也可以用 ↑ 调整计划顺序。只写对这篇文章有帮助的内容。</p><div class="plan-grid">${draft.order.map(planCard).join('')}</div><div class="action-bar"><button class="btn primary" id="start-writing">开始写${paragraphMode ? '段落' : '作文'}</button><button class="btn" id="plan-to-draft">把计划复制为草稿</button></div></details><label for="essay-text">${paragraphMode ? '我的段落' : '我的作文'}</label><textarea class="writing-editor" id="essay-text" placeholder="把自己的内容写在这里。记得分句，加上标点。">${e(draft.text)}</textarea><div class="row between"><div id="writing-metrics" class="writing-metrics"></div><span class="save-status" id="draft-status">草稿保存在这台设备</span></div><details class="reference-details"><summary>看看用到的词语</summary><div class="writing-preview" id="writing-preview"></div></details><div class="action-bar"><button class="btn primary" id="check-writing">自动检查</button><button class="btn" id="export-writing">导出作文</button></div><div id="writing-report" class="notice" hidden aria-live="polite"></div><div class="self-assess"><h3>我自己读一读</h3>${(isNarrativeTopic(theme) ? [
       ['opening', '开头交代了人物或事情。'],
       ['body', '经过写清楚了，有合适的标点。'],
       ['ending', '写出了结果或自己的感受。'],
       ['natural', '词语用得自然，没有为了凑词而硬写。'],
-    ]
+    ] : [
+      ['opening', '表达目的清楚。'],
+      ['body', '内容安排清楚，有合适的标点。'],
+      ['ending', '结尾和格式适合这个文体。'],
+      ['natural', '词语用得自然，没有为了凑词而硬写。'],
+    ])
       .map(
         ([k, label]) =>
           `<div class="check-row"><input type="checkbox" id="check-${k}" data-checklist="${k}" ${draft.checklist[k] ? 'checked' : ''}><label for="check-${k}">${label}</label></div>`,
@@ -141,7 +164,7 @@ export function writing(root, ctx) {
   }
   function refreshTopicList() {
     themes = availableTopics();
-    if (!themes.some((topic) => topic.id === theme.id)) theme = themes[0] || essayTopics[0];
+    // Filters only change choices; the selected essay and draft remain intact.
     themeIndex = themes.findIndex((topic) => topic.id === theme.id);
     wordOffset = 0;
     load();
@@ -192,7 +215,12 @@ export function writing(root, ctx) {
       }
       if (event.target.id === 'essay-topic-search') {
         topicSearch = event.target.value;
-        refreshTopicList();
+        if (event.isComposing) return;
+        themes = availableTopics();
+        const selector = root.querySelector('#writing-theme');
+        selector.replaceChildren(...themes.map((topic) => new Option(`《${topic.title}》`, topic.id, false, topic.id === theme.id)));
+        if (!themes.some((topic) => topic.id === theme.id)) selector.prepend(new Option(`《${theme.title}》 · 当前题目（筛选结果以外）`, theme.id, true, true));
+        root.querySelector('.essay-topic-picker .small.muted').textContent = `${themes.length} 个题目`;
       }
     },
     { signal: ctx.signal },
@@ -202,8 +230,13 @@ export function writing(root, ctx) {
     (event) => {
       if (event.target.id === 'writing-theme') {
         save();
-        themeIndex = Number(event.target.value);
-        theme = themes[themeIndex];
+        const nextTheme = essayTopics.find((topic) => topic.id === event.target.value);
+        if (!nextTheme) return;
+        theme = nextTheme;
+        themeIndex = themes.findIndex((topic) => topic.id === theme.id);
+        state.essaySelections ||= {};
+        state.essaySelections[ctx.activity.id] = theme.id;
+        state.essaySelections[selectionKey] = theme.id;
         state.settings.essayTopic = theme.title;
         wordOffset = 0;
         load();
@@ -211,6 +244,7 @@ export function writing(root, ctx) {
         compactPlanner();
       }
       if (event.target.id === 'essay-topic-grade') {
+        save();
         topicGrade = Number(event.target.value);
         refreshTopicList();
       }
@@ -239,6 +273,7 @@ export function writing(root, ctx) {
         return;
       }
       if (b.dataset.topicCategory) {
+        save();
         topicCategory = b.dataset.topicCategory;
         refreshTopicList();
         return;
