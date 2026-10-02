@@ -87,6 +87,8 @@ Do not manually copy either generated dataset into `dist`; `npm run build` does 
 
 The importer validates both worksheets and their ID relationship before replacing either generated JSON, then preserves both previous files in `docs/essay-title-backups/`. It blocks a removal of more than 25 records or more than 10% of either library; use `npm run essays:update -- --allow-removals` only after reviewing an intentional bulk deletion. See [the essay-title guide](docs/essay-titles.md) for the complete schema and the character-count rule.
 
+To diagnose an old deployed catalogue, run `npm run essays:verify-deployment` (read-only; defaults to the public site). It checks workbook fidelity, joined counts, Standard totals, deployed application code and build/Service Worker consistency, and exits unsuccessfully for the old 300-essay release. Run `npm run test:essay-catalogue` against a production build served on port 4183; set `TEST_URL` to test a different server. These UI tests derive new titles by comparing workbook IDs with the original 300-title backup. See [the catalogue deployment diagnosis](docs/essay-catalogue-deployment.md) for evidence, full commands and remaining deployment actions.
+
 ## Run locally
 
 Use Node.js 20 or newer. In this project folder:
