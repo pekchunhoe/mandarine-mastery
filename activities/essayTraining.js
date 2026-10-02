@@ -113,13 +113,15 @@ function TopicPicker({ topics, catalog = topics, selectedId, filters }) {
     ? `<option value="${e(selectedId)}" selected>《${e(selected.title)}》 · 当前题目（筛选结果以外）</option>` : '';
   const select = (key, label, options) =>
     `<label>${label}<select data-training-filter="${key}"><option value="">全部</option>${options.map((value) => `<option value="${e(value)}" ${filters[key] === String(value) ? 'selected' : ''}>${e(value)}</option>`).join('')}</select></label>`;
-  return `<section class="essay-topic-picker panel soft training-picker"><div class="row between"><strong>选择作文题目</strong><span class="small muted" data-training-topic-count>${topics.length} 个有范文的题目</span></div><label>搜索题目<input type="search" data-training-filter="search" value="${e(filters.search)}" placeholder="搜索题目、主题或关键词"></label><div class="training-filters">${select('grade', '年级', [1, 2, 3, 4, 5, 6])}${select('category', '类别', values(catalog, 'category'))}${select('theme', '主题', values(catalog, 'theme'))}${select('essayType', '作文类型', values(catalog, 'essayType'))}${select('difficulty', '难度', values(catalog, 'difficulty'))}</div><label>题目<select id="training-topic" ${topics.length || selectedId ? '' : 'disabled'}>${retainedOption}${topics.length ? topics.map((topic) => `<option value="${e(topic.id)}" ${topic.id === selectedId ? 'selected' : ''}>《${e(topic.title)}》 · ${e(topic.category)}</option>`).join('') : '<option>没有符合条件的题目</option>'}</select></label></section>`;
+  return `<section class="essay-topic-picker panel soft training-picker"><div class="row between"><strong>选择作文题目</strong><span class="small muted" data-training-topic-count>${topics.length} 个有范文的题目</span></div><label>搜索题目<input type="search" data-training-filter="search" value="${e(filters.search)}" placeholder="搜索题目、主题或关键词"></label><div class="training-filters">${select('grade', '年级', [1, 2, 3, 4, 5, 6])}${select('category', '类别', values(catalog, 'category'))}${select('theme', '主题', values(catalog, 'theme'))}${select('essayType', '作文类型', values(catalog, 'essayType'))}${select('difficulty', '难度', values(catalog, 'difficulty'))}</div><label>题目<select id="training-topic" ${topics.length || selectedId ? '' : 'disabled'}>${retainedOption}${topics.length ? topics.map((topic) => `<option value="${e(topic.id)}" ${topic.id === selectedId ? 'selected' : ''}>《${e(topic.title)}》 · ${e(topic.category)}</option>`).join('') : '<option value="" disabled>没有符合条件的题目</option>'}</select></label><p class="small muted" data-training-empty role="status" ${topics.length ? 'hidden' : ''}>没有符合条件的题目，请调整筛选条件或清除搜索文字。</p></section>`;
 }
 
 function refreshTopicSearchResults(root, topics, selectedId) {
   const count = $('[data-training-topic-count]', root);
   const selector = $('#training-topic', root);
+  const empty = $('[data-training-empty]', root);
   if (count) count.textContent = `${topics.length} 个有范文的题目`;
+  if (empty) empty.hidden = topics.length > 0;
   if (!selector) return;
 
   const selectedStillVisible = topics.some((topic) => topic.id === selectedId);
@@ -146,6 +148,33 @@ function refreshTopicSearchResults(root, topics, selectedId) {
     selector.prepend(new Option(`《${selected?.title || ''}》 · 当前题目（筛选结果以外）`, selectedId, true, true));
   }
   selector.disabled = !topics.length && !selectedId;
+}
+
+// Keep the search input, editor and reader mounted. Some IMEs send their final
+// input before compositionend, with isComposing still true; others send it after.
+function attachTopicSearch(root, filters, selectedId, signal) {
+  let composingInput = null;
+  let appliedSearch = filters.search;
+  const refresh = (input) => {
+    if (input.value === appliedSearch) return;
+    filters.search = input.value;
+    appliedSearch = filters.search;
+    refreshTopicSearchResults(root, filteredTopics(filters), selectedId());
+  };
+  root.addEventListener('compositionstart', (event) => {
+    if (event.target.dataset.trainingFilter === 'search') composingInput = event.target;
+  }, { signal });
+  root.addEventListener('compositionend', (event) => {
+    if (event.target.dataset.trainingFilter !== 'search') return;
+    composingInput = null;
+    refresh(event.target);
+  }, { signal });
+  const onInput = (event) => {
+    if (event.target.dataset.trainingFilter !== 'search' || event.isComposing || composingInput === event.target) return;
+    refresh(event.target);
+  };
+  root.addEventListener('input', onInput, { signal });
+  root.addEventListener('change', onInput, { signal });
 }
 
 const allModelTopics = () =>
@@ -202,7 +231,10 @@ export function modelEssayStudy(root, ctx) {
     enhanceSpeechUI(root);
   };
   draw();
-  root.addEventListener('change', () => stop(), { signal: ctx.signal });
+  attachTopicSearch(root, filters, () => topic?.id, ctx.signal);
+  root.addEventListener('change', (event) => {
+    if (event.target.dataset.trainingFilter !== 'search') stop();
+  }, { signal: ctx.signal });
   root.addEventListener(
     'change',
     (event) => {
@@ -228,20 +260,6 @@ export function modelEssayStudy(root, ctx) {
         contentId = event.target.value;
         selectedParagraph = 0;
         draw();
-      }
-    },
-    { signal: ctx.signal },
-  );
-  root.addEventListener(
-    'input',
-    (event) => {
-      if (event.target.dataset.trainingFilter === 'search') {
-        filters.search = event.target.value;
-        // Keep the active search control in place. Rebuilding `root` here used to
-        // disconnect the focused input after every character.
-        if (event.isComposing) return;
-        topics = filteredTopics(filters);
-        refreshTopicSearchResults(root, topics, topic?.id);
       }
     },
     { signal: ctx.signal },
@@ -515,19 +533,13 @@ export function guidedEssayWriting(root, ctx) {
       { signal: ctx.signal },
     );
   }
-  root.addEventListener('change', () => stop(), { signal: ctx.signal });
+  attachTopicSearch(root, filters, () => topic?.id, ctx.signal);
+  root.addEventListener('change', (event) => {
+    if (event.target.dataset.trainingFilter !== 'search') stop();
+  }, { signal: ctx.signal });
   root.addEventListener(
     'input',
     (event) => {
-      if (event.target.dataset.trainingFilter === 'search') {
-        filters.search = event.target.value;
-        // IME composition must retain its candidate UI; the final input event
-        // updates only the result list and never replaces the search element.
-        if (event.isComposing) return;
-        topics = filteredTopics(filters);
-        refreshTopicSearchResults(root, topics, topic?.id);
-        return;
-      }
       if (event.target.id === 'guided-line') {
         stop();
         focusedTextarea = event.target;

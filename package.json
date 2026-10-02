@@ -10,6 +10,7 @@
     "test:ai-browser": "node --test tests/ai-teacher-browser.mjs tests/guided-tutor-browser.mjs",
     "test:essay-browser": "node --test tests/essay-master-browser.mjs",
     "test:essay-catalogue": "node --test tests/essay-catalogue-browser.mjs",
+    "test:essay-search": "node --test tests/essay-search-browser.mjs",
     "essays:verify-deployment": "node tools/verify-essay-deployment.mjs",
     "check:ai-security": "node tools/check-ai-security.mjs",
     "import:vocabulary": "node tools/import-workbook.mjs",

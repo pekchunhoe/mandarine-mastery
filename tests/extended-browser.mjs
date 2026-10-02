@@ -340,13 +340,28 @@ try {
   });
   await test('Storage denial leaves a functioning app with an explicit save warning', async () => {
     const blocked = await browser.newContext();
-    await blocked.addInitScript(() =>
+    await blocked.addInitScript(() => {
       Object.defineProperty(window, 'localStorage', {
         get() {
           throw new DOMException('Storage disabled', 'SecurityError');
         },
-      }),
-    );
+      });
+      // This tests storage denial and reader controls, not the host's installed
+      // voices. Native TTS can fail/end before the Stop button is exercised.
+      Object.defineProperty(window, 'SpeechSynthesisUtterance', {
+        configurable: true,
+        value: class { constructor(text) { this.text = text; } },
+      });
+      Object.defineProperty(window, 'speechSynthesis', {
+        configurable: true,
+        value: {
+          getVoices: () => [{ name: 'Mandarin test voice', lang: 'zh-CN' }],
+          addEventListener() {},
+          speak(utterance) { utterance.onstart?.({}); },
+          cancel() {}, pause() {}, resume() {},
+        },
+      });
+    });
     const tab = await blocked.newPage();
     const blockedErrors = [];
     tab.on('pageerror', (error) => blockedErrors.push(error.message));
