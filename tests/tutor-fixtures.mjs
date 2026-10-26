@@ -54,7 +54,7 @@ export function inputFor(action) {
       activity === B.SENTENCE
         ? {
             situation: '运动会',
-            topic: '跑步',
+            topic: '跑',
             studentSentence: sentence,
             ...(action === A.VOCABULARY_HELP ? { availableVocabularyIds: [word.id] } : {}),
           }
@@ -68,6 +68,18 @@ export function inputFor(action) {
 }
 export function resultFor(action, context = {}, vocabulary = word, resolved = false) {
   const original = context.studentSentence || sentence;
+  const target = context.topic || '跑';
+  // Explicit model examples for the sentence target; essay fixtures stay unchanged.
+  const models = {
+    跑: '小明在操场上奋力向前跑。',
+    解决: '我们一起想办法解决问题。',
+    坚持: '我每天坚持练习写字。',
+    勇敢: '小明勇敢地走上台演讲。',
+    保护环境: '我们减少使用塑料袋，一起保护环境。',
+    兴高采烈: '听到获胜的消息，同学们兴高采烈地欢呼起来。',
+    '因为……所以……': '老师请我用“因为……所以……”说明事情的原因和结果。',
+  };
+  const model = models[target] || `老师请我用“${target}”写一个句子。`;
   const studentTask = '选择一个建议，用自己的想法修改，再读一读。';
   const results = {
     [A.PARAGRAPH_HINT]: {
@@ -77,7 +89,7 @@ export function resultFor(action, context = {}, vocabulary = word, resolved = fa
     },
     [A.SENTENCE_HINT]: {
       thinkingQuestions: ['小明参加什么比赛？', '大家怎样为他加油？'],
-      usefulPatterns: ['一边……一边……'],
+      usefulPatterns: [`____${target}____。`],
       studentTask,
     },
     [A.SENTENCE_CHECK]: {
@@ -93,17 +105,17 @@ export function resultFor(action, context = {}, vocabulary = word, resolved = fa
     [A.SENTENCE_EXPAND]: {
       original,
       levels: [
-        { level: 1, focus: '加入地点', example: '在____，小明跑得很快。' },
-        { level: 2, focus: '加入动作', example: '在____，小明____，跑得很快。' },
-        { level: 3, focus: '加入观察到的细节', example: '小明____，跑得很快，我看到____。' },
+        { level: 1, focus: '加入地点', example: `在____，${model}` },
+        { level: 2, focus: '加入时间', example: `____的时候，${model}` },
+        { level: 3, focus: '加入观察到的细节', example: `${model.slice(0, -1)}，我看到____。` },
       ],
       studentTask,
     },
     [A.SENTENCE_VIVID]: {
       original,
       techniques: [{ type: '动作描写', suggestion: '写一写手臂和脚的动作。' }],
-      example: '小明摆动双臂，飞快地向前跑去。',
-      tryYourself: '小明____，____。',
+      example: model,
+      tryYourself: `____${target}____。`,
       studentTask,
     },
     ...Object.fromEntries(
@@ -123,7 +135,7 @@ export function resultFor(action, context = {}, vocabulary = word, resolved = fa
         {
           vocabularyId: vocabulary.id,
           reason: '适合描写比赛时努力向前的动作。',
-          exampleUsage: '他奋力向终点跑去。',
+          exampleUsage: context.selectedTitle ? '他奋力向终点跑去。' : model,
           ...(resolved ? { vocabulary, source: 'library' } : {}),
         },
       ],

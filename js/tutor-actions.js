@@ -253,9 +253,9 @@ export function localTutorResult(action, context) {
     !context.studentParagraph?.trim()
   ) {
     return {
-      thinkingQuestions: ['谁在什么地方？', '发生了什么事？', '你当时有什么感受？'],
-      usefulPatterns: ['因为……所以……'],
-      studentTask: '想一想当前的题目或情境，选择一个问题，先自己写一句话。',
+      thinkingQuestions: [context.topic ? `怎样在生活情境中使用“${context.topic}”？` : '谁在什么地方？', '发生了什么事？', '你当时有什么感受？'],
+      usefulPatterns: [context.topic ? `____${context.topic}____。` : '因为……所以……'],
+      studentTask: context.topic ? `请用“${context.topic}”先自己写一句话，再读一读词语用得是否自然。` : '想一想当前的题目或情境，选择一个问题，先自己写一句话。',
     };
   }
   return null;

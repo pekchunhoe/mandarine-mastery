@@ -781,3 +781,14 @@ summary {
   padding: 10px 0;
   color: var(--green);
 }
+.keyword-modes { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; }
+.keyword-modes legend { font-weight: 700; margin-bottom: 8px; }
+.keyword-mode-options, .custom-keyword-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+.keyword-mode-options .btn { flex: 1; min-width: 0; }
+.custom-keyword-controls input { flex: 1 1 180px; width: 100%; min-width: 0; }
+.custom-keyword-controls .btn { min-height: 44px; }
+.sentence-target { margin: 20px 0; overflow-wrap: anywhere; }
+.sentence-target mark { display: block; width: fit-content; max-width: 100%; padding: 6px 12px; margin-top: 8px; border-radius: 10px; background: #fff0b3; color: #493600; font-size: 1.6rem; font-weight: 700; }
+#sentence-workspace { min-width: 0; overflow-wrap: anywhere; }
+#sentence-workspace .target-word { display: none; }
+#custom-keyword-error { color: #9b2424; }

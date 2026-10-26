@@ -12,6 +12,7 @@ import { showModal, closeModal } from './modal.js';
 import { openVocabularyDialog } from './vocabulary-dialog.js';
 import { refreshSpeech } from '../js/speech-service.js';
 import { copyText } from '../js/clipboard.js';
+import { keywordReminder } from '../js/sentence-keyword.js';
 
 // A workflow may expose only the actions that make sense at its current scope.
 // Guided essay writing uses this to keep paragraph tools beside the paragraph editor.
@@ -77,7 +78,7 @@ const issueNames = {
   meaning: '意思',
   repetition: '重复',
 };
-export function tutorResultHTML(action, data) {
+export function tutorResultHTML(action, data, { keyword } = {}) {
   let html = '';
   if (action === A.PARAGRAPH_HINT)
     return (
@@ -153,7 +154,7 @@ export function tutorResultHTML(action, data) {
             '</h4><span class="small muted">' +
             (item.source === 'ai' ? 'AI推荐' : '词库') +
             '</span>' +
-            vocabularyDetails(word) +
+            vocabularyDetails(word, { example: !keyword || item.source === 'ai' }) +
             paragraph('AI用法提示：' + item.reason) +
             paragraph('AI例句：' + item.exampleUsage) +
             '</article>'
@@ -233,9 +234,15 @@ export function attachAITeacher(root, { signal, getRequest }) {
       }
     };
     const request = getRequest(action);
+    const keyword = request.activity === TUTOR_ACTIVITY.SENTENCE && request.context.topic;
+    const targetNotice = keyword
+      ? '<div class="sentence-target"><strong>本次造句词语：</strong><mark>' + e(keyword) + '</mark></div>' +
+        (request.context.studentSentence?.trim() && !request.context.studentSentence.includes(keyword)
+          ? '<p role="status">' + e(keywordReminder(keyword)) + '</p>' : '')
+      : '';
     const modal = showModal(
       tutorActions[action].label,
-      '<p class="small muted">' +
+      targetNotice + '<p class="small muted">' +
         e(request.scopeLabel || '建议仅供参考，请保留自己的想法和表达。') +
         '</p><div class="ai-result" aria-live="polite" aria-busy="true"></div><div class="action-bar"><button type="button" class="btn" data-ai-retry hidden>再试一次</button><button type="button" class="btn" data-ai-vocabulary>打开词语库</button></div>',
       { className: 'ai-dialog', onClose: cleanup },
@@ -282,7 +289,9 @@ export function attachAITeacher(root, { signal, getRequest }) {
       try {
         const data = await aiTeacher[action](request, { signal: controller.signal });
         if (!current()) return;
-        content.innerHTML = tutorResultHTML(action, data);
+        content.innerHTML = tutorResultHTML(action, data, {
+          keyword: request.activity === TUTOR_ACTIVITY.SENTENCE ? request.context.topic : undefined,
+        });
         const copy = content.querySelector('[data-ai-copy]');
         if (copy)
           copy.onclick = async () => {

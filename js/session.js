@@ -232,6 +232,8 @@ export function runActivity(root, id, params) {
             '',
           )}</div><p class="source-label">自评帮助安排复习，不会单独提高掌握等级。</p></div>`;
         $('#next-question', root).onclick = next;
+        if (activity.id === 'builder' && ctx.keywordMode?.() === 'custom')
+          done.querySelector('.self-assess')?.remove();
         done.querySelectorAll('[data-rating]').forEach(
           (b) =>
             (b.onclick = () => {
@@ -278,7 +280,8 @@ export function runActivity(root, id, params) {
         location.hash = 'activities';
       } else {
         if (!ctx.finished) sessionSkipped++;
-        const r = state.records[item.id];
+        const r = activity.id === 'builder' && ctx.keywordMode?.() === 'custom'
+          ? null : state.records[item.id];
         if (r) {
           r.due = new Date().toISOString();
           persist();
@@ -289,6 +292,13 @@ export function runActivity(root, id, params) {
     $('#get-hint', root)?.addEventListener('click', () => {
       if (ctx.finished) return;
       hintLevel++;
+      if (activity.id === 'builder' && ctx.keywordMode?.() === 'custom') {
+        const keyword = ctx.activeKeyword();
+        const box = $('#hint-output', root);
+        box.hidden = false;
+        box.textContent = keyword ? `请用“${keyword}”想一想：谁在什么地方，做了什么？读一读，检查这个词语用得是否自然。` : '请先输入并确认你想练习的词语。';
+        return;
+      }
       const examples = unique(vocabulary.filter((w) => w.word === item.word).map(practiceExample));
       const alternate = examples.find((s) => s !== practiceExample(item));
       const hints = [

@@ -372,7 +372,9 @@ test('installed SDK sends correct Interactions schema, server prompt and statele
     assert.ok(!Object.hasOwn(sent.generation_config, 'thinking_level'));
     assert.deepEqual(sent.response_format.schema, actions[A.SENTENCE_HINT].schema);
     assert.match(sent.system_instruction, /NOT followed/);
-    assert.ok(sent.system_instruction.endsWith(actions[A.SENTENCE_HINT].instruction));
+    assert.ok(sent.system_instruction.includes(actions[A.SENTENCE_HINT].instruction));
+    assert.match(sent.system_instruction, /指定词语/);
+    assert.ok(sent.system_instruction.includes(JSON.stringify(body(A.SENTENCE_HINT).context.topic)));
     assert.ok(!JSON.stringify(sent).includes(env.GEMINI_API_KEY));
     return Response.json({
       id: 'mock',

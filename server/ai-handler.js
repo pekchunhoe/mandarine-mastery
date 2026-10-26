@@ -10,6 +10,7 @@ import {
   validateInput,
   normalizeResult,
   validateTeachingResult,
+  validateSentenceKeywordResult,
 } from './ai-contract.js';
 import { TIMEOUT_MS, generateTeachingResult, selectGeminiModel } from './gemini.js';
 import { clientRateLimit, createTutorLimiter } from './ai-rate-limit.js';
@@ -147,7 +148,9 @@ export function createTeacherHandler({
           request.signal.addEventListener('abort', cancelRequest, { once: true });
           if (request.signal.aborted) cancelRequest();
         });
-        const raw = await Promise.race([
+        // Both attempts share the existing deadline and cancellation. Every
+        // upstream call also acquires the existing rate/concurrency limiter.
+        const deadline = Promise.race([
           cancellation,
           new Promise((_, reject) => {
             timer = setTimeout(() => {
@@ -155,29 +158,47 @@ export function createTeacherHandler({
               controller.abort();
             }, timeoutMs);
           }),
-          generate(input, {
+        ]);
+        const generateOnce = () => generate(input, {
             apiKey,
             model,
             signal: controller.signal,
             onDiagnostic: (diagnostic) => {
               interactionDiagnostic = diagnostic;
             },
-          }),
-        ]);
-        if (typeof raw !== 'string' || raw.length > MAX_OUTPUT)
-          throw new TeacherError('AI_INVALID_RESPONSE', 502);
-        try {
-          if (input.action === A.VOCABULARY_HELP) {
-            ({ data, cacheable } = resolveVocabularyResult(JSON.parse(raw), records, store));
-          } else
-            data = validateTeachingResult(
-              input.action,
-              normalizeResult(JSON.parse(raw), actions[input.action].schema),
-              input.context,
-            );
-        } catch (error) {
-          if (error instanceof TeacherError) throw error;
-          throw new TeacherError('AI_INVALID_RESPONSE', 502);
+          });
+        for (let attempt = 0; attempt < 2; attempt++) {
+          if (request.signal.aborted || controller.signal.aborted)
+            throw new TeacherError('AI_CANCELLED', 499);
+          if (attempt) {
+            release?.();
+            release = undefined;
+            release = limiter.acquire(request, env.VERCEL === '1');
+            input.keywordRetry = true;
+          }
+          const raw = await Promise.race([deadline, generateOnce()]);
+          if (typeof raw !== 'string' || raw.length > MAX_OUTPUT)
+            throw new TeacherError('AI_INVALID_RESPONSE', 502);
+          try {
+            const parsed = JSON.parse(raw);
+            if (input.action === A.VOCABULARY_HELP) {
+              // Check raw AI examples before vocabulary filtering can drop them.
+              if (input.activity === 'sentenceBuilder' && input.context.topic)
+                validateSentenceKeywordResult(input, normalizeResult({ supplementalVocabulary: [], ...parsed }, actions[input.action].schema));
+              ({ data, cacheable } = resolveVocabularyResult(parsed, records, store));
+            } else
+              data = validateTeachingResult(
+                input.action,
+                normalizeResult(parsed, actions[input.action].schema),
+                input.context,
+              );
+            validateSentenceKeywordResult(input, data);
+            break;
+          } catch (error) {
+            if (error instanceof TeacherError && error.code === 'AI_KEYWORD_MISSING' && attempt === 0) continue;
+            if (error instanceof TeacherError) throw error;
+            throw new TeacherError('AI_INVALID_RESPONSE', 502);
+          }
         }
       }
       if (JSON.stringify(data).includes(apiKey)) throw new TeacherError('AI_INVALID_RESPONSE', 502);

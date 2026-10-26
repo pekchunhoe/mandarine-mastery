@@ -1,4 +1,5 @@
 // Same-origin, reusable AI service. It never imports a server module or an API key.
+import { validSentenceKeywordResult } from './sentence-keyword.js';
 import {
   TUTOR_ACTION as A,
   tutorActions,
@@ -26,6 +27,7 @@ const errors = {
   AI_TIMEOUT: 'AI老师阅读的时间有点长，请稍后再试。',
   AI_REFUSAL: 'AI老师这次无法分析这段内容，你可以修改后再试。',
   AI_INVALID_RESPONSE: 'AI老师这次的回复不完整，请再试一次。',
+  AI_KEYWORD_MISSING: 'AI老师这次的示范没有完整保留指定词语，请再试一次。你的句子和草稿已保留。',
   TEXT_REQUIRED: '请先写一些内容，AI老师才能给你建议。',
   TEXT_TOO_LONG: '内容太长了，请选择较短的一段再试（最多 6000 字符）。',
 };
@@ -208,6 +210,9 @@ export async function requestTeaching(action, payload, { signal } = {}) {
     if (result.action !== action || !result.data || typeof result.data !== 'object')
       throw new AIError(errors.AI_INVALID_RESPONSE);
     if (!validTeachingData(action, result.data)) throw new AIError(errors.AI_INVALID_RESPONSE);
+    if (request.activity === 'sentenceBuilder' &&
+        !validSentenceKeywordResult(action, result.data, request.context.topic))
+      throw new AIError(errors.AI_KEYWORD_MISSING);
     signal?.throwIfAborted();
     if (controller.signal.aborted) throw new AIError(errors.AI_TIMEOUT);
     if (result.cacheable !== false)

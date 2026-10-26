@@ -515,7 +515,9 @@ for (const mode of ['free', 'blocks', 'paragraph'])
                 {
                   vocabularyId: candidate.id,
                   reason: '可以帮助描写当前情景。',
-                  exampleUsage: '先想想这个词适合哪个动作。',
+                  exampleUsage: input.activity === B.SENTENCE
+                    ? `老师请我用“${input.context.topic}”和“${candidate.word}”造句。`
+                    : '先想想这个词适合哪个动作。',
                 },
               ]
             : [],
@@ -524,14 +526,18 @@ for (const mode of ['free', 'blocks', 'paragraph'])
               word: '心怦怦直跳',
               pinyin: 'xīn pēng pēng zhí tiào',
               definitionChinese: '心跳很快，形容紧张的心情。',
-              exampleSentence: '脚步声越来越近，我的心怦怦直跳。',
+              exampleSentence: input.activity === B.SENTENCE
+                ? `老师请我用“${input.context.topic}”造句，我的心怦怦直跳。`
+                : '脚步声越来越近，我的心怦怦直跳。',
               reason: '可以写出躲藏时的心情。',
             },
             {
               word: '屏住呼吸',
               pinyin: 'bǐng zhù hū xī',
               definitionChinese: '暂时不呼吸，不发出声音。',
-              exampleSentence: '听见奇怪的声音后，我屏住呼吸。',
+              exampleSentence: input.activity === B.SENTENCE
+                ? `听老师讲解“${input.context.topic}”的用法时，我屏住呼吸。`
+                : '听见奇怪的声音后，我屏住呼吸。',
               reason: '可以描写害怕时的反应。',
             },
           ],
@@ -760,7 +766,7 @@ for (const action of activityTutorActions[B.SENTENCE])
     const body = await page.locator('.ai-result').textContent();
     if (action === A.SENTENCE_HINT) {
       assert.match(body, /小明参加什么比赛/);
-      assert.match(body, /一边……一边……/);
+      assert.ok(body.includes(`____${sent[0].context.topic}____。`));
     }
     if (action === A.SENTENCE_CHECK) {
       assert.match(body, /没有发现明显错误/);
@@ -775,7 +781,7 @@ for (const action of activityTutorActions[B.SENTENCE])
       for (const level of [1, 2, 3]) assert.match(body, new RegExp(`第 ${level} 步`));
     if (action === A.SENTENCE_VIVID) {
       assert.match(body, /动作描写/);
-      assert.match(body, /小明____，____/);
+      assert.ok(body.includes(`____${sent[0].context.topic}____。`));
     }
     if (action === A.VOCABULARY_HELP) {
       const chosen = records.find((word) => word.id === sent[0].context.availableVocabularyIds[0]);
@@ -784,9 +790,10 @@ for (const action of activityTutorActions[B.SENTENCE])
         'pinyin',
         'definitionChinese',
         'generatedSynonyms',
-        'exampleSentence',
       ])
         if (chosen[field]) assert.ok(body.includes(chosen[field]));
+      // Dictionary examples remain authoritative, but are not target models.
+      assert.ok(body.includes(sent[0].context.topic));
       assert.equal(
         await page.locator('#modal [data-speak]').getAttribute('data-speak'),
         chosen.word,
@@ -811,7 +818,7 @@ test('sentence error vs optional style rendering and original preserved', async 
         explanation: '这个词形容心里紧张、不安。',
       },
     ],
-    suggestedRevision: '我心里七上八下，匆匆跑去学校。',
+    suggestedRevision: '我心里七上八下，匆匆跑去学校找老师解决问题。',
   }));
   await clickAI(page, A.SENTENCE_CHECK);
   await done(page);

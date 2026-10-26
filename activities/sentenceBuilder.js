@@ -8,8 +8,9 @@ import { enableDrag } from '../components/drag.js';
 import { aiToolbar, attachAITeacher } from '../components/ai-teacher.js';
 import { TUTOR_ACTION as A, TUTOR_ACTIVITY } from '../js/tutor-actions.js';
 import { sentenceVocabularyCandidates } from '../js/ai-vocabulary.js';
+import { MAX_KEYWORD_LENGTH, keywordReminder } from '../js/sentence-keyword.js';
 export function freeSentence(root, ctx) {
-  const key = `sentence:${ctx.item.id}`,
+  const key = ctx.sentenceDraftKey || `sentence:${ctx.item.id}`,
     saved = state.drafts[key]?.text || '';
   const isBuilder = ctx.activity?.id === 'builder';
   const situations = ['在学校', '和家人相处', '与朋友一起', CUSTOM_SENTENCE_SCENARIO];
@@ -19,6 +20,13 @@ export function freeSentence(root, ctx) {
     : situations.map((text) => `<option>${e(text)}</option>`).join('');
   root.innerHTML = `<h2>轮到你来造句</h2><div class="target-word">${e(ctx.item.word)}</div><p class="question-instruction">想想谁在什么地方，做了什么。用这个词语，写一句发生在生活中的话。</p><details class="reference-details" ${ctx.difficulty === 'easy' ? 'open' : ''}><summary>看看参考用法</summary><p class="quote">${highlight(practiceExample(ctx.item), [ctx.item.word])}</p></details><label for="sentence-context">我想写的情境</label><select id="sentence-context" ${isBuilder ? 'class="sentence-scenario-select"' : ''}>${situationOptions}</select><label for="own-sentence" style="margin-top:16px">我的句子</label><textarea id="own-sentence" placeholder="把人物、事情和想法写清楚。">${e(saved)}</textarea>${isBuilder ? `<div class="action-bar sentence-copy-actions"><button type="button" class="btn" id="copy-sentence" ${saved.trim() ? '' : 'disabled'}><span aria-hidden="true">📋</span> 复制句子</button></div>` : ''}<p class="save-status" id="sentence-save">草稿保存在这台设备</p><div class="check-row"><input type="checkbox" id="sentence-selfcheck"><label for="sentence-selfcheck">我读过一遍，确认词语用在真实的情境里。</label></div><button class="btn primary" id="submit-sentence">记录我的造句练习</button><p class="source-label">自动检查只检查用词、字数与标点。句意和用法请和老师一起读一读。</p>`;
   const input = root.querySelector('#own-sentence');
+  if (ctx.item.custom) root.querySelector('.reference-details').remove();
+  const selfcheck = root.querySelector('#sentence-selfcheck');
+  if (isBuilder) selfcheck.checked = !!state.drafts[key]?.selfcheck;
+  if (isBuilder) selfcheck.addEventListener('change', () => {
+    state.drafts[key] = { ...state.drafts[key], text: input.value, word: ctx.item.word, kind: 'sentence', selfcheck: selfcheck.checked, at: new Date().toISOString() };
+    persist();
+  }, { signal: ctx.signal });
   if (isBuilder) {
     root.insertAdjacentHTML('beforeend', aiToolbar(TUTOR_ACTIVITY.SENTENCE));
     const situation = root.querySelector('#sentence-context');
@@ -73,6 +81,10 @@ export function freeSentence(root, ctx) {
     'click',
     () => {
       const text = root.querySelector('#own-sentence').value.trim();
+      if (isBuilder && !text.includes(ctx.item.word)) {
+        ctx.note(keywordReminder(ctx.item.word));
+        return;
+      }
       if (!productionEligible(text, ctx.item.word)) {
         ctx.note('请把这个词语写进一个具体情境，写清楚事情，并加上句末标点。');
         return;
@@ -95,6 +107,107 @@ export function freeSentence(root, ctx) {
   );
 }
 export function sentenceBuilder(root, ctx) {
+  const preferencesKey = 'builder:keyword-settings';
+  const preferences = state.drafts[preferencesKey] ||= { text: '', mode: 'builtin', customInput: '', customKeyword: '' };
+  let mode = preferences.mode === 'custom' ? 'custom' : 'builtin';
+  let customKeyword = preferences.customKeyword || '';
+  // This getter is the sole authority for workspace, helper and AI targets.
+  const activeKeyword = () => mode === 'builtin' ? ctx.item.word : customKeyword;
+  let workspaceController;
+  root.innerHTML = `<fieldset class="keyword-modes"><legend>选择词语方式</legend><div class="keyword-mode-options"><button type="button" class="btn" data-keyword-mode="builtin">📚 内置词语</button><button type="button" class="btn" data-keyword-mode="custom">✏️ 自选词语</button></div></fieldset><form id="custom-keyword-form" hidden><label for="custom-keyword">请输入你想练习的词语</label><div class="custom-keyword-controls"><input id="custom-keyword" maxlength="${MAX_KEYWORD_LENGTH}" placeholder="例如：坚持、保护环境、兴高采烈" aria-describedby="custom-keyword-error"><button class="btn primary" type="submit">开始造句</button></div><p class="small muted">可输入词语、成语或短语，最多 ${MAX_KEYWORD_LENGTH} 字符。</p><p id="custom-keyword-error" role="alert" hidden></p></form><section class="sentence-target" aria-live="polite"><strong>本次造句词语：</strong><mark id="active-keyword"></mark><p id="keyword-instruction"></p></section><div id="sentence-workspace"></div>`;
+  const input = root.querySelector('#custom-keyword');
+  const error = root.querySelector('#custom-keyword-error');
+  const workspace = root.querySelector('#sentence-workspace');
+  input.value = preferences.customInput || '';
+  let composing = false;
+  input.addEventListener('compositionstart', () => { composing = true; }, { signal: ctx.signal });
+  input.addEventListener('compositionend', () => { composing = false; }, { signal: ctx.signal });
+  input.addEventListener('input', () => {
+    preferences.customInput = input.value;
+    error.hidden = true;
+    input.removeAttribute('aria-invalid');
+    persist();
+  }, { signal: ctx.signal });
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && (composing || event.isComposing || event.keyCode === 229)) event.preventDefault();
+  }, { signal: ctx.signal });
+  ctx.activeKeyword = activeKeyword;
+  ctx.keywordMode = () => mode;
+  const drawWorkspace = () => {
+    workspaceController?.abort(); // Discard old requests, dialogs and event handlers.
+    workspaceController = new AbortController();
+    ctx.finished = false;
+    ctx.reset = undefined;
+    for (const id of ['activity-feedback', 'activity-complete', 'hint-output']) {
+      const element = root.closest('.question-card')?.querySelector(`#${id}`);
+      if (element) element.hidden = true;
+    }
+    root.querySelectorAll('[data-keyword-mode]').forEach((button) => {
+      const selected = mode === button.dataset.keywordMode;
+      button.setAttribute('aria-pressed', String(selected));
+      button.classList.toggle('primary', selected);
+    });
+    root.querySelector('#custom-keyword-form').hidden = mode !== 'custom';
+    const keyword = activeKeyword();
+    root.querySelector('#active-keyword').textContent = keyword || '请先输入词语';
+    root.querySelector('#keyword-instruction').textContent = keyword ? `请用“${keyword}”造一个完整、通顺的句子。` : '确认词语后，就可以开始造句。';
+    workspace.replaceChildren();
+    if (!keyword) return;
+    const child = Object.create(ctx);
+    child.signal = workspaceController.signal;
+    child.item = mode === 'builtin' ? ctx.item : { word: keyword, custom: true };
+    child.complete = (result) => {
+      if (mode === 'custom') {
+        state.drafts[child.sentenceDraftKey] = {
+          ...state.drafts[child.sentenceDraftKey], practicedAt: new Date().toISOString(),
+        };
+        persist();
+      }
+      ctx.complete(mode === 'builtin' ? result : { ...result, items: [] });
+      child.finished = ctx.finished;
+    };
+    if (mode === 'custom') {
+      child.sentenceDraftKey = `sentence:custom:${encodeURIComponent(keyword)}`;
+      freeSentence(workspace, child);
+    } else builtInSentenceBuilder(workspace, child);
+    ctx.reset = child.reset;
+    preferences.mode = mode;
+    preferences.customKeyword = customKeyword;
+    persist();
+  };
+  root.querySelectorAll('[data-keyword-mode]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (mode === button.dataset.keywordMode) return;
+      mode = button.dataset.keywordMode;
+      preferences.mode = mode;
+      persist();
+      drawWorkspace();
+    }, { signal: ctx.signal });
+  });
+  root.querySelector('#custom-keyword-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (composing) return;
+    const keyword = input.value.trim();
+    if (!keyword || keyword.length > MAX_KEYWORD_LENGTH) {
+      error.textContent = !keyword ? '请先输入你想练习的词语。' : `词语太长了，请控制在 ${MAX_KEYWORD_LENGTH} 字符以内。`;
+      error.hidden = false;
+      input.setAttribute('aria-invalid', 'true');
+      input.focus();
+      return;
+    }
+    input.value = keyword;
+    preferences.customInput = keyword;
+    if (customKeyword !== keyword) {
+      customKeyword = keyword;
+      drawWorkspace();
+    }
+    persist();
+  }, { signal: ctx.signal });
+  ctx.signal.addEventListener('abort', () => workspaceController?.abort(), { once: true });
+  drawWorkspace();
+}
+
+function builtInSentenceBuilder(root, ctx) {
   const data = builders[ctx.item.word];
   if (!data || ctx.difficulty === 'hard' || ctx.params.get('mode') === 'free') {
     freeSentence(root, ctx);
