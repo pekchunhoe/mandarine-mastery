@@ -74,9 +74,7 @@ for (const action of activityTutorActions[B.ESSAY]) {
         assert.deepEqual(actual.context, expected);
         assert.equal(
           options.model,
-          [A.PARAGRAPH_REVIEW, A.ESSAY_REVIEW].includes(action)
-            ? 'gemini-3.6-flash'
-            : 'gemini-3.5-flash-lite',
+          'gemini-3.5-flash-lite',
         );
         return JSON.stringify(resultFor(action));
       },

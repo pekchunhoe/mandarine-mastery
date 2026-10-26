@@ -26,6 +26,8 @@
     "test:sentence-builder-browser": "node --test tests/sentence-builder-browser.mjs",
     "test:sentence-scenario-browser": "node --test tests/sentence-scenario-browser.mjs",
     "test:sentence-copy-browser": "node --test tests/sentence-copy-browser.mjs",
+    "test:ai-speed-browser": "node --test tests/ai-speed-browser.mjs",
+    "benchmark:ai": "node tools/benchmark-ai-teacher.mjs",
     "test:extended": "node tests/extended-browser.mjs",
     "format": "prettier --write . --ignore-path .prettierignore"
   },

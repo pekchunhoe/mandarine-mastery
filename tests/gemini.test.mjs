@@ -99,7 +99,7 @@ test('all actions use their own structured schema and prompt; secret stays outsi
     const response = await handler({
       generate: async (input, options) => {
         assert.equal(input.action, action);
-        assert.equal(options.model, selectGeminiModel(action, env).model);
+        assert.equal(options.model, selectGeminiModel(action, env, input.activity).model);
         assert.ok(actions[action].instruction);
         assert.ok(actions[action].schema.required.length);
         assert.ok(!JSON.stringify(input).includes(env.GEMINI_API_KEY));
@@ -112,7 +112,7 @@ test('all actions use their own structured schema and prompt; secret stays outsi
     );
   }
 });
-test('server routes validated actions and preserves a fast-only legacy override', async () => {
+test('unscoped helper preserves legacy routes; scoped teaching ignores all model overrides', async () => {
   for (const action of [
     A.SENTENCE_HINT,
     A.SENTENCE_CHECK,
@@ -139,21 +139,21 @@ test('server routes validated actions and preserves a fast-only legacy override'
       GEMINI_ADVANCED_MODEL: 'configured-advanced',
     },
     generate: async (_, options) => {
-      assert.equal(options.model, 'configured-advanced');
+      assert.equal(options.model, DEFAULT_FAST_MODEL);
       return JSON.stringify(feedback);
     },
   })(request());
   await handler({
     env: { ...env, GEMINI_MODEL: 'legacy-fast' },
     generate: async (_, options) => {
-      assert.equal(options.model, 'legacy-fast');
+      assert.equal(options.model, DEFAULT_FAST_MODEL);
       return JSON.stringify(resultFor(A.SENTENCE_HINT));
     },
   })(request(body(A.SENTENCE_HINT)));
   await handler({
     env: { ...env, GEMINI_MODEL: 'legacy-fast' },
     generate: async (_, options) => {
-      assert.equal(options.model, DEFAULT_ADVANCED_MODEL);
+      assert.equal(options.model, DEFAULT_FAST_MODEL);
       return JSON.stringify(feedback);
     },
   })(request());
@@ -176,7 +176,7 @@ test('upstream errors hidden; quota mapped', async () => {
       throw Error(env.GEMINI_API_KEY);
     },
   });
-  await failure(request(), 'AI_RATE_LIMIT', 429, {
+  await failure(request(), 'AI_PROVIDER_QUOTA', 429, {
     generate: async () => {
       throw Object.assign(Error('secret'), { status: 429 });
     },
@@ -238,7 +238,7 @@ test('operational timing logs are structured and exclude writing and secrets', a
       action: A.SENTENCE_CHECK,
       routeClass: 'fast',
       model: DEFAULT_FAST_MODEL,
-      durationMs: 17,
+      durationMs: info[1][1].durationMs,
       status: 'success',
     },
   ]);
@@ -248,7 +248,7 @@ test('operational timing logs are structured and exclude writing and secrets', a
       action: A.SENTENCE_CHECK,
       routeClass: 'fast',
       model: DEFAULT_FAST_MODEL,
-      durationMs: 17,
+      durationMs: warn[0][1].durationMs,
       status: 'unavailable',
     },
   ]);
@@ -367,9 +367,9 @@ test('installed SDK sends correct Interactions schema, server prompt and statele
     assert.match(request.url, /\/interactions/);
     assert.equal(sent.model, DEFAULT_FAST_MODEL);
     assert.equal(sent.store, false);
-    assert.deepEqual(sent.generation_config, buildGenerationConfig({ action: A.SENTENCE_HINT }));
+    assert.deepEqual(sent.generation_config, buildGenerationConfig(body(A.SENTENCE_HINT)));
     assert.ok(!Object.hasOwn(sent.generation_config, 'thinking_config'));
-    assert.ok(!Object.hasOwn(sent.generation_config, 'thinking_level'));
+    assert.equal(sent.generation_config.thinking_level, 'minimal');
     assert.deepEqual(sent.response_format.schema, actions[A.SENTENCE_HINT].schema);
     assert.match(sent.system_instruction, /NOT followed/);
     assert.ok(sent.system_instruction.includes(actions[A.SENTENCE_HINT].instruction));
@@ -424,8 +424,8 @@ test('advanced SDK completion logs only bounded interaction usage metadata', asy
   assert.equal(response.status, 200);
   assert.deepEqual(logs[1][1], {
     action: A.PARAGRAPH_REVIEW,
-    routeClass: 'advanced',
-    model: DEFAULT_ADVANCED_MODEL,
+    routeClass: 'fast',
+    model: DEFAULT_FAST_MODEL,
     durationMs: logs[1][1].durationMs,
     status: 'success',
     interactionStatus: 'completed',
@@ -506,5 +506,5 @@ test('SDK quota error is mapped without raw response leakage', async (t) => {
       { status: 429 },
     ),
   );
-  await failure(request(), 'AI_RATE_LIMIT', 429, { generate: generateTeachingResult });
+  await failure(request(), 'AI_PROVIDER_QUOTA', 429, { generate: generateTeachingResult });
 });

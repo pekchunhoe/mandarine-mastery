@@ -32,7 +32,7 @@ test('installed SDK receives the server-selected model and request shape for eve
       { ...input, vocabularyCandidates: [] },
       {
         apiKey: env.GEMINI_API_KEY,
-        model: selectGeminiModel(action).model,
+        model: selectGeminiModel(action, {}, input.activity).model,
         signal: new AbortController().signal,
       },
     );
@@ -41,17 +41,14 @@ test('installed SDK receives the server-selected model and request shape for eve
   assert.equal(sent.length, Object.values(A).length);
   for (const [index, action] of Object.values(A).entries()) {
     const request = sent[index];
-    const advanced = [A.PARAGRAPH_REVIEW, A.ESSAY_REVIEW].includes(action);
-    assert.equal(request.model, advanced ? DEFAULT_ADVANCED_MODEL : DEFAULT_FAST_MODEL);
+    assert.equal(request.model, DEFAULT_FAST_MODEL);
     assert.deepEqual(request.generation_config, {
       max_output_tokens: OUTPUT_TOKEN_CAPS[action],
-      ...(advanced ? { thinking_level: 'minimal' } : {}),
+      thinking_level: 'minimal',
     });
     if (action === A.PARAGRAPH_REVIEW) assert.equal(request.generation_config.max_output_tokens, 1200);
     if (action === A.ESSAY_REVIEW) assert.equal(request.generation_config.max_output_tokens, 1800);
-    for (const field of advanced
-      ? ['thinking_budget', 'thinking_config']
-      : ['thinking_budget', 'thinking_config', 'thinking_level'])
+    for (const field of ['thinking_budget', 'thinking_config'])
       assert.ok(!Object.hasOwn(request.generation_config, field));
   }
 });
@@ -85,7 +82,7 @@ test('upstream error categories are logged from bounded metadata without respons
     );
     const body = await response.json();
     assert.equal(response.status, statusCode === 429 ? 429 : 503);
-    assert.equal(body.error.code, statusCode === 429 ? 'AI_RATE_LIMIT' : 'AI_UNAVAILABLE');
+    assert.equal(body.error.code, statusCode === 429 ? 'AI_PROVIDER_QUOTA' : statusCode === 404 ? 'AI_MODEL_UNAVAILABLE' : 'AI_UNAVAILABLE');
     const diagnostic = warnings[0][1];
     assert.equal(diagnostic.action, A.SENTENCE_CHECK);
     assert.equal(diagnostic.routeClass, 'fast');

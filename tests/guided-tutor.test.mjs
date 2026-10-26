@@ -248,15 +248,16 @@ test('server throttle blocks quota consumption and resets after window', async (
   assert.equal((await endpoint(request())).status, 200);
 });
 test('server validates configurable per-client RPM without increasing the instance limits', () => {
-  assert.equal(DEFAULT_CLIENT_RPM, 4);
-  assert.equal(clientRateLimit(), 4);
+  assert.equal(DEFAULT_CLIENT_RPM, 12);
+  assert.equal(clientRateLimit(), 12);
+  assert.equal(clientRateLimit('12'), 12);
   assert.equal(clientRateLimit('4'), 4);
-  for (const value of ['0', '-1', '4.5', '41', 'words']) assert.equal(clientRateLimit(value), 4);
+  for (const value of ['', '0', '-1', '4.5', '13', '20', '40', '41', 'words', 'Infinity']) assert.equal(clientRateLimit(value), 12);
 });
 test('concurrency and instance-wide limits bounded independently of client identity', () => {
-  const limiter = createTutorLimiter({ concurrent: 1, perClient: 20, total: 2 });
+  const limiter = createTutorLimiter({ concurrent: 1, perClient: 12, total: 2 });
   const release = limiter.acquire(request());
-  assert.throws(() => limiter.acquire(request()), /AI_RATE_LIMIT/);
+  assert.throws(() => limiter.acquire(request()), /AI_BUSY/);
   release();
   release();
   limiter.acquire(request())();

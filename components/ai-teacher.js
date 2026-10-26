@@ -239,11 +239,14 @@ export function attachAITeacher(root, { signal, getRequest, getContextKey }) {
     cooldownUntil = 0,
     cooldownTimer;
   const coolingDown = () => Date.now() < cooldownUntil;
-  const updateButtons = () =>
+  const updateButtons = () => {
     root.querySelectorAll('[data-ai-action]').forEach((button) => {
       button.disabled =
         coolingDown() || (!!active?.pending && button.dataset.aiAction === active.action);
     });
+    if (active?.failed && active.retryButton)
+      active.retryButton.hidden = coolingDown() || active.pending;
+  };
   const startCooldown = (seconds) => {
     cooldownUntil = Math.max(cooldownUntil, Date.now() + seconds * 1000);
     clearTimeout(cooldownTimer);
@@ -320,9 +323,11 @@ export function attachAITeacher(root, { signal, getRequest, getContextKey }) {
     };
     const content = modal.querySelector('.ai-result'),
       retry = modal.querySelector('[data-ai-retry]');
+    session.retryButton = retry;
     const run = async () => {
       if (!current() || session.pending) return;
       session.pending = true;
+      session.failed = false;
       updateButtons();
       retry.hidden = true;
       content.setAttribute('aria-busy', 'true');
@@ -377,6 +382,7 @@ export function attachAITeacher(root, { signal, getRequest, getContextKey }) {
         content.innerHTML = '<p role="alert">' + e(message) + '</p>';
         if (error instanceof AIError && error.retryAfterSeconds)
           startCooldown(error.retryAfterSeconds);
+        session.failed = true;
         retry.hidden = coolingDown();
         toast(message);
       } finally {

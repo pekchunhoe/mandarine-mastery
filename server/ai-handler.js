@@ -14,7 +14,7 @@ import {
   teachingSpec,
 } from './ai-contract.js';
 import { TIMEOUT_MS, generateTeachingResult, selectGeminiModel } from './gemini.js';
-import { clientRateLimit, createTutorLimiter } from './ai-rate-limit.js';
+import { clientRateLimit, createTutorLimiter, DEFAULT_TOTAL_RPM } from './ai-rate-limit.js';
 import { resolveVocabularyResult } from './ai-vocabulary.js';
 
 let library;
@@ -92,16 +92,51 @@ export const upstreamStatusCategory = (status) => {
   return undefined;
 };
 
+// Read bounded structured metadata only; never parse/log provider message text.
+export function upstreamRetryAfter(error, time = Date.now()) {
+  const headers = error?.headers || error?.rawResponse?.headers;
+  const header = (name) => headers?.get?.(name) ?? headers?.[name] ?? headers?.[name === 'retry-after' ? 'Retry-After' : 'Retry-After-Ms'];
+  const seconds = [];
+  const add = (value) => { if (Number.isFinite(value) && value >= 0 && value <= 86400) seconds.push(Math.max(1, Math.ceil(value))); };
+  const retry = header('retry-after');
+  if (typeof retry === 'string' && retry.length <= 128) {
+    if (/^\d+(?:\.\d+)?$/u.test(retry.trim())) add(Number(retry));
+    else add((Date.parse(retry) - time) / 1000);
+  }
+  const milliseconds = header('retry-after-ms');
+  if (typeof milliseconds === 'string' && /^\d{1,9}$/u.test(milliseconds)) add(Number(milliseconds) / 1000);
+  for (const details of [error?.error?.details, error?.error?.error?.details, error?.data$?.error?.details])
+    if (Array.isArray(details)) for (const detail of details.slice(0, 16)) {
+      if (detail?.['@type'] === 'type.googleapis.com/google.rpc.RetryInfo' &&
+          typeof detail.retryDelay === 'string' && /^\d{1,8}(?:\.\d{1,9})?s$/u.test(detail.retryDelay))
+        add(Number(detail.retryDelay.slice(0, -1)));
+    }
+  return seconds.length ? Math.max(...seconds) : undefined;
+}
+
 export function createTeacherHandler({
   generate = generateTeachingResult,
   env = process.env,
   timeoutMs = TIMEOUT_MS,
   vocabulary = getVocabulary,
-  limiter = createTutorLimiter({ perClient: clientRateLimit(env.AI_CLIENT_RPM) }),
+  limiter = createTutorLimiter({ perClient: clientRateLimit(env.AI_CLIENT_RPM), total: Math.min(DEFAULT_TOTAL_RPM, clientRateLimit(env.AI_CLIENT_RPM)) }),
   now = Date.now,
   logger = console,
 } = {}) {
+  let providerBackoff;
+  const assertProviderReady = () => {
+    const seconds = providerBackoff && Math.ceil((providerBackoff.until - now()) / 1000);
+    if (seconds > 0) throw new TeacherError(providerBackoff.code, providerBackoff.status, { retryAfterSeconds: seconds });
+  };
   return async (request) => {
+    const arrivedAt = now();
+    const timing = { prepareMs: 0, limiterMs: 0, queueMs: 0, geminiMs: 0, validationMs: 0, retryMs: 0 };
+    let attempts = 0;
+    const elapsed = (start) => Math.max(0, now() - start);
+    const timedReply = (body, status = 200, headers = {}) => reply(body, status, {
+      'Server-Timing': [...Object.entries(timing).map(([name, value]) => `${name};dur=${value.toFixed(3)}`), `totalMs;dur=${elapsed(arrivedAt).toFixed(3)}`, `attempts;desc="${attempts}"`].join(', '),
+      ...headers,
+    });
     if (request.method !== 'POST')
       return reply(
         { ok: false, error: { code: 'METHOD_NOT_ALLOWED', message: messages.METHOD_NOT_ALLOWED } },
@@ -117,11 +152,12 @@ export function createTeacherHandler({
       const input = validateInput(await readBody(request));
       if (request.signal.aborted) throw new TeacherError('AI_CANCELLED', 499);
       let data = localTutorResult(input.action, input.context);
-      if (data) return reply({ ok: true, action: input.action, data });
+      if (data) return timedReply({ ok: true, action: input.action, data });
       const apiKey = env.GEMINI_API_KEY?.trim();
       if (!apiKey) throw new TeacherError('AI_NOT_CONFIGURED', 503);
       action = input.action;
-      ({ model, routeClass } = selectGeminiModel(action, env));
+      ({ model, routeClass } = selectGeminiModel(action, env, input.activity));
+      assertProviderReady();
       const candidates =
         input.action === A.VOCABULARY_HELP ? input.context.availableVocabularyIds || [] : [];
       const store = input.action === A.VOCABULARY_HELP ? await vocabulary() : null;
@@ -132,6 +168,7 @@ export function createTeacherHandler({
         definitionChinese,
       }));
       delete input.context.availableVocabularyIds;
+      timing.prepareMs = elapsed(arrivedAt);
       let cacheable = true;
       {
         startedAt = now();
@@ -140,7 +177,6 @@ export function createTeacherHandler({
           routeClass,
           model,
         });
-        release = limiter.acquire(request, env.VERCEL === '1');
         const cancellation = new Promise((_, reject) => {
           cancelRequest = () => {
             reject(new TeacherError('AI_CANCELLED', 499));
@@ -174,12 +210,26 @@ export function createTeacherHandler({
           if (attempt) {
             release?.();
             release = undefined;
-            release = limiter.acquire(request, env.VERCEL === '1');
             input.keywordRetry = true;
           }
-          const raw = await Promise.race([deadline, generateOnce()]);
+          assertProviderReady();
+          const retryStarted = now();
+          const admissionStarted = now();
+          try { release = limiter.acquire(request, env.VERCEL === '1'); }
+          finally { timing.limiterMs += elapsed(admissionStarted); }
+          const generationStarted = now();
+          let raw;
+          try {
+            attempts++;
+            interactionDiagnostic = undefined;
+            raw = await Promise.race([deadline, generateOnce()]);
+          } finally {
+            timing.geminiMs += elapsed(generationStarted);
+            if (attempt) timing.retryMs += elapsed(retryStarted);
+          }
           if (typeof raw !== 'string' || raw.length > MAX_OUTPUT)
             throw new TeacherError('AI_INVALID_RESPONSE', 502);
+          const validationStarted = now();
           try {
             const parsed = JSON.parse(raw);
             if (input.action === A.VOCABULARY_HELP) {
@@ -206,6 +256,10 @@ export function createTeacherHandler({
             if (error instanceof TeacherError && ['AI_KEYWORD_MISSING', 'AI_SCENARIO_MISMATCH'].includes(error.code) && attempt === 0) continue;
             if (error instanceof TeacherError) throw error;
             throw new TeacherError('AI_INVALID_RESPONSE', 502);
+          } finally {
+            const duration = elapsed(validationStarted);
+            timing.validationMs += duration;
+            if (attempt) timing.retryMs += duration;
           }
         }
       }
@@ -219,7 +273,7 @@ export function createTeacherHandler({
           status: 'success',
           ...interactionDiagnostic,
         });
-      return reply({
+      return timedReply({
         ok: true,
         action: input.action,
         data,
@@ -231,8 +285,19 @@ export function createTeacherHandler({
       const { upstreamStatus, upstreamCode } =
         error instanceof TeacherError ? {} : upstreamDiagnostic(error);
       if (upstreamStatus === 429) {
-        code = 'AI_RATE_LIMIT';
+        code = 'AI_PROVIDER_QUOTA';
         status = 429;
+      }
+      if (upstreamStatus === 404) { code = 'AI_MODEL_UNAVAILABLE'; status = 503; }
+      const retryGuidance = [429, 503].includes(upstreamStatus) ? upstreamRetryAfter(error, now()) : undefined;
+      if (upstreamStatus === 429 || upstreamStatus === 503) {
+        const time = now();
+        const existing = providerBackoff?.until > time ? providerBackoff : null;
+        const quota = upstreamStatus === 429 || existing?.code === 'AI_PROVIDER_QUOTA';
+        providerBackoff = {
+          code: quota ? 'AI_PROVIDER_QUOTA' : 'AI_UNAVAILABLE', status: quota ? 429 : 503,
+          until: Math.max(existing?.until || 0, time + (retryGuidance ?? (upstreamStatus === 429 ? 60 : 5)) * 1000),
+        };
       }
       if (
         ['AbortError', 'TimeoutError', 'RequestTimeoutError', 'APIConnectionTimeoutError'].includes(
@@ -252,6 +317,9 @@ export function createTeacherHandler({
               AI_TIMEOUT: 'timeout',
               AI_UNAVAILABLE: 'unavailable',
               AI_RATE_LIMIT: 'rate_limited',
+              AI_PROVIDER_QUOTA: 'rate_limited',
+              AI_BUSY: 'busy',
+              AI_MODEL_UNAVAILABLE: 'not_found',
               AI_REFUSAL: 'safety',
               AI_INVALID_RESPONSE: 'malformed_response',
               AI_KEYWORD_MISSING: 'malformed_response',
@@ -271,13 +339,14 @@ export function createTeacherHandler({
         });
       }
       const retryAfterSeconds =
-        code === 'AI_RATE_LIMIT' &&
+        ['AI_RATE_LIMIT', 'AI_BUSY', 'AI_PROVIDER_QUOTA', 'AI_UNAVAILABLE'].includes(code) &&
         Number.isInteger(error?.retryAfterSeconds) &&
         error.retryAfterSeconds >= 1 &&
-        error.retryAfterSeconds <= 60
+        error.retryAfterSeconds <= 86400
           ? error.retryAfterSeconds
-          : undefined;
-      return reply(
+          : providerBackoff && (providerBackoff.code === code || [429, 503].includes(upstreamStatus)) && providerBackoff.until > now()
+            ? Math.ceil((providerBackoff.until - now()) / 1000) : undefined;
+      return timedReply(
         {
           ok: false,
           error: {
@@ -294,6 +363,9 @@ export function createTeacherHandler({
       controller.abort();
       release?.();
       if (cancelRequest) request.signal.removeEventListener('abort', cancelRequest);
+      if (action) logger.info?.('AI teacher performance', {
+        action, model, arrivedAt, attempts, ...timing, totalMs: elapsed(arrivedAt),
+      });
     }
   };
 }

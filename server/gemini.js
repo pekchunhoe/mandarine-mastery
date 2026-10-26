@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { teachingSpec, systemInstruction, sentenceKeywordInstruction, TeacherError, MAX_OUTPUT } from './ai-contract.js';
+import { activityTutorActions, TUTOR_ACTIVITY } from '../js/tutor-actions.js';
 
 export const DEFAULT_FAST_MODEL = 'gemini-3.5-flash-lite';
 export const DEFAULT_ADVANCED_MODEL = 'gemini-3.6-flash';
@@ -35,10 +36,14 @@ export const OUTPUT_TOKEN_CAPS = {
 
 const configuredModel = (value, fallback) =>
   typeof value === 'string' && value.trim() ? value.trim() : fallback;
+const scopedTeacherAction = (action, activity) =>
+  [TUTOR_ACTIVITY.SENTENCE, TUTOR_ACTIVITY.ESSAY].includes(activity) && activityTutorActions[activity].includes(action);
 
-// Browser input never controls this choice. The legacy model only preserves the
-// routine route for existing deployments; it cannot replace the advanced route.
-export function selectGeminiModel(action, env = {}) {
+// Validated teaching scopes are pinned. Other integrations retain their existing
+// environment-based routes; a browser-supplied model is never consulted.
+export function selectGeminiModel(action, env = {}, activity) {
+  if (scopedTeacherAction(action, activity))
+    return { routeClass: 'fast', model: DEFAULT_FAST_MODEL };
   const routeClass = ADVANCED_ACTIONS.has(action) ? 'advanced' : 'fast';
   if (routeClass === 'advanced')
     return {
@@ -54,12 +59,12 @@ export function selectGeminiModel(action, env = {}) {
   };
 }
 
-// Fast requests retain the Flash-Lite default; advanced reviews use minimal
-// reasoning to stay within the application's fixed response-time budget.
-export function buildGenerationConfig({ action }) {
+// Both teaching activities explicitly use minimal thinking. Unrelated callers
+// retain their prior effort configuration and all action-specific output caps.
+export function buildGenerationConfig({ action, activity }) {
   return {
     max_output_tokens: OUTPUT_TOKEN_CAPS[action],
-    ...(ADVANCED_ACTIONS.has(action) ? { thinking_level: 'minimal' } : {}),
+    ...(scopedTeacherAction(action, activity) || ADVANCED_ACTIONS.has(action) ? { thinking_level: 'minimal' } : {}),
   };
 }
 
@@ -103,7 +108,7 @@ export async function generateTeachingResult(input, { apiKey, model, signal, onD
         mime_type: 'application/json',
         schema: spec.schema,
       },
-      generation_config: buildGenerationConfig({ action: input.action }),
+      generation_config: buildGenerationConfig(input),
     },
     { signal, timeout: TIMEOUT_MS, maxRetries: 0 },
   );

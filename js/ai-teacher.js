@@ -20,11 +20,15 @@ export const BROWSER_TIMEOUT_MS = 40000;
 export const CACHE_TTL_MS = 5 * 60 * 1000;
 const CACHE_NAMESPACE = 'tutor-response-v4-scenario';
 const teachingCache = new Map();
-const unavailable = '暂时无法联系 AI老师，请稍后再试。';
+const unavailable = '暂时无法联系 AI老师，你可以使用旁边的“复制提示词”继续练习。';
 const errors = {
   TITLE_REQUIRED: '请先选择作文题目，AI老师才能根据题目帮助你。',
   AI_NOT_CONFIGURED: 'AI老师暂时还不能使用，请联系老师。其他练习仍可正常使用。',
   AI_RATE_LIMIT: 'AI老师今天有点忙，请稍后再试。',
+  AI_PROVIDER_QUOTA: 'Gemini API 已达到当前使用额度，请稍后重试。',
+  AI_BUSY: 'AI老师正在处理其他请求，请稍后再试。',
+  AI_MODEL_UNAVAILABLE: 'AI老师的指定模型暂时无法使用，请使用“复制提示词”继续练习，或联系老师。',
+  AI_UNAVAILABLE: 'AI老师暂时无法回应，你可以使用旁边的“复制提示词”，在 ChatGPT 或 Gemini 中继续练习。',
   AI_TIMEOUT: 'AI老师阅读的时间有点长，请稍后再试。',
   AI_REFUSAL: 'AI老师这次无法分析这段内容，你可以修改后再试。',
   AI_INVALID_RESPONSE: 'AI老师这次的回复不完整，请再试一次。',
@@ -184,6 +188,8 @@ export async function requestTeaching(action, payload, { signal } = {}) {
   const cached = cachedResult(key);
   if (cached) return cached;
   const controller = new AbortController();
+  const clientStartedAt = globalThis.performance?.now?.();
+  let outcome = 'error', attempts;
   let timedOut = false;
   const abort = () => controller.abort();
   signal?.addEventListener('abort', abort, { once: true });
@@ -202,16 +208,20 @@ export async function requestTeaching(action, payload, { signal } = {}) {
       credentials: 'omit',
     });
     const result = await response.json();
+    const attemptHeader = response.headers.get('Server-Timing')?.match(/attempts;desc="([0-2])"/u);
+    if (attemptHeader) attempts = Number(attemptHeader[1]);
     const retryAfterSeconds =
-      result.error?.code === 'AI_RATE_LIMIT' &&
+      ['AI_RATE_LIMIT', 'AI_BUSY', 'AI_PROVIDER_QUOTA', 'AI_UNAVAILABLE'].includes(result.error?.code) &&
       Number.isInteger(result.error.retryAfterSeconds) &&
       result.error.retryAfterSeconds >= 1 &&
-      result.error.retryAfterSeconds <= 60
+      result.error.retryAfterSeconds <= 86400
         ? result.error.retryAfterSeconds
         : undefined;
     if (!response.ok || !result.ok) {
       const message = retryAfterSeconds
-        ? `AI老师需要休息约 ${retryAfterSeconds} 秒，请继续写作，稍后再试。`
+        ? result.error.code === 'AI_RATE_LIMIT'
+          ? `AI老师需要休息约 ${retryAfterSeconds} 秒，请继续写作，稍后再试。`
+          : `${errors[result.error.code] || unavailable} 请约 ${retryAfterSeconds} 秒后再试。`
         : errors[result.error?.code] || unavailable;
       throw new AIError(message, { retryAfterSeconds });
     }
@@ -228,8 +238,10 @@ export async function requestTeaching(action, payload, { signal } = {}) {
     if (controller.signal.aborted) throw new AIError(errors.AI_TIMEOUT);
     if (result.cacheable !== false)
       teachingCache.set(key, { data: clone(result.data), expiresAt: Date.now() + CACHE_TTL_MS });
+    outcome = 'success';
     return result.data;
   } catch (error) {
+    outcome = signal?.aborted ? 'cancelled' : timedOut ? 'timeout' : 'error';
     if (signal?.aborted) throw error;
     if (timedOut) throw new AIError(errors.AI_TIMEOUT);
     if (error instanceof AIError) throw error;
@@ -237,6 +249,15 @@ export async function requestTeaching(action, payload, { signal } = {}) {
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener('abort', abort);
+    // Keep one private-content-free entry per activity/action, not an unbounded
+    // history. DevTools can pair this network duration with Server-Timing.
+    try {
+      if (typeof clientStartedAt === 'number') {
+        const name = `ai-teacher:${request.activity}:${action}`;
+        performance.clearMeasures(name);
+        performance.measure(name, { start: clientStartedAt, end: performance.now(), detail: { outcome, attempts } });
+      }
+    } catch { /* Timing support must never affect teaching or older browsers. */ }
   }
 }
 export const aiTeacher = Object.fromEntries(
