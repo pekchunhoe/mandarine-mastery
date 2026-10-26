@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { actions, systemInstruction, sentenceKeywordInstruction, TeacherError, MAX_OUTPUT } from './ai-contract.js';
+import { teachingSpec, systemInstruction, sentenceKeywordInstruction, TeacherError, MAX_OUTPUT } from './ai-contract.js';
 
 export const DEFAULT_FAST_MODEL = 'gemini-3.5-flash-lite';
 export const DEFAULT_ADVANCED_MODEL = 'gemini-3.6-flash';
@@ -87,10 +87,11 @@ export function interactionDiagnostic({ status, usage } = {}) {
 // Isolated SDK adapter. No browser imports, conversation storage, tools or secrets in prompts.
 export async function generateTeachingResult(input, { apiKey, model, signal, onDiagnostic }) {
   const ai = new GoogleGenAI({ apiKey });
+  const spec = teachingSpec(input);
   const result = await ai.interactions.create(
     {
       model,
-      system_instruction: `${systemInstruction}${input.activity === 'guidedEssay' ? '\n如提供essayGrade和essayType，按题目实际Standard和文体调整语言难度、结构与格式建议。书信、演讲稿、日记、状物、写景和说明文不强加记叙文的起因、经过、结果。' : ''}\n${actions[input.action].instruction}${sentenceKeywordInstruction(input)}`,
+      system_instruction: `${systemInstruction}${input.activity === 'guidedEssay' ? '\n如提供essayGrade和essayType，按题目实际Standard和文体调整语言难度、结构与格式建议。书信、演讲稿、日记、状物、写景和说明文不强加记叙文的起因、经过、结果。' : ''}\n${spec.instruction}${sentenceKeywordInstruction(input)}`,
       input: JSON.stringify({
         activity: input.activity,
         context: input.context,
@@ -100,7 +101,7 @@ export async function generateTeachingResult(input, { apiKey, model, signal, onD
       response_format: {
         type: 'text',
         mime_type: 'application/json',
-        schema: actions[input.action].schema,
+        schema: spec.schema,
       },
       generation_config: buildGenerationConfig({ action: input.action }),
     },

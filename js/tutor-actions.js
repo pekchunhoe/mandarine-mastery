@@ -1,5 +1,6 @@
 // Public contract only. Teaching instructions and output schemas stay server-side.
 import { countCompositionCharacters } from './writing-checks.js';
+import { usesScenarioTeaching } from './sentence-teacher-context.js';
 
 export const TUTOR_ACTION = Object.freeze({
   SENTENCE_HINT: 'sentence_hint',
@@ -152,10 +153,13 @@ export function tutorRequest(action, activity, raw = {}) {
     invalid();
   const context = {};
   const fields = spec.fieldsByActivity?.[activity] || spec.fields;
-  for (const field of activity === B.ESSAY ? [...fields, 'essayGrade', 'essayType'] : fields) {
+  for (const field of activity === B.ESSAY ? [...fields, 'essayGrade', 'essayType'] : [...fields, 'keywordMode', 'studentYearLevel']) {
     const value = raw[field];
     if (value === undefined) continue;
-    if (field in textLimits) {
+    if (field === 'keywordMode') {
+      if (!['builtin', 'custom'].includes(value)) invalid();
+      context[field] = value;
+    } else if (field in textLimits) {
       if (typeof value !== 'string') invalid();
       if (value.length > textLimits[field]) tooLong();
       context[field] = value;
@@ -169,7 +173,7 @@ export function tutorRequest(action, activity, raw = {}) {
         invalid();
       context[field] = field === 'availableVocabularyIds' ? [...new Set(value)] : [...value];
     } else {
-      if (!Number.isInteger(value) || value < 1 || value > (field === 'essayGrade' ? 6 : 100)) invalid();
+      if (!Number.isInteger(value) || value < 1 || value > (['essayGrade', 'studentYearLevel'].includes(field) ? 6 : 100)) invalid();
       context[field] = value;
     }
   }
@@ -243,10 +247,16 @@ export function tutorRequest(action, activity, raw = {}) {
       'TEXT_REQUIRED',
       '先把这一段的意思写清楚（至少 6 字），再试着写得更生动。',
     );
-  return { action, activity, context };
+  const request = { action, activity, context };
+  if (usesScenarioTeaching(request) && !context.situation?.trim())
+    throw new TutorInputError('SCENARIO_REQUIRED', '请先填写“我想写的情境”，让 AI老师根据你的想法提供帮助。');
+  return request;
 }
 
 export function localTutorResult(action, context) {
+  // A described scenario needs genuine scenario-specific teaching and examples;
+  // keep only the legacy no-context hint local. No request occurs while typing.
+  if (['builtin', 'custom'].includes(context.keywordMode)) return null;
   if (
     action === A.SENTENCE_HINT &&
     !context.studentSentence?.trim() &&

@@ -510,6 +510,10 @@ for (const mode of ['free', 'blocks', 'paragraph'])
         assert.equal(options.model, 'gemini-3.5-flash-lite');
         const candidate = input.vocabularyCandidates[0];
         return JSON.stringify({
+          ...(input.activity === B.SENTENCE ? { examples: [
+            `老师请我用“${input.context.topic}”和“心怦怦直跳”造句。`,
+            `听老师讲解“${input.context.topic}”的用法时，我屏住呼吸。`,
+          ] } : {}),
           recommendations: candidate
             ? [
                 {
@@ -995,7 +999,7 @@ test('sentence loading, malformed response, retry and offline failure preserve t
       await route.fulfill({ json: { ok: true, action: A.SENTENCE_CHECK, data: {} } });
     } else
       await route.fulfill({
-        json: { ok: true, action: A.SENTENCE_CHECK, data: resultFor(A.SENTENCE_CHECK) },
+        json: { ok: true, action: A.SENTENCE_CHECK, data: resultFor(A.SENTENCE_CHECK, route.request().postDataJSON().context) },
       });
   });
   const before = await sentenceState(page);
@@ -1202,7 +1206,7 @@ test('block composition survives mode switching, navigation, reload and normal s
   assert.ok((await page.locator('#activity-feedback').textContent()).includes('第二句'));
 });
 
-test('empty sentence/paragraph and short essay use no requests', async (t) => {
+test('empty scenario, required sentence/paragraph and short essay use no requests', async (t) => {
   const sentencePage = await fixture(t),
     essayPage = await fixture(t, B.ESSAY);
   let calls = 0;
@@ -1211,8 +1215,9 @@ test('empty sentence/paragraph and short essay use no requests', async (t) => {
       calls++;
       return route.abort();
     });
+  await sentencePage.locator('#sentence-context').selectOption('你自己想到的情境');
   await clickAI(sentencePage, A.SENTENCE_HINT);
-  await done(sentencePage);
+  await sentencePage.locator('#modal [role="alert"]').waitFor();
   await close(sentencePage);
   for (const action of [A.SENTENCE_CHECK, A.SENTENCE_EXPAND, A.SENTENCE_VIVID]) {
     await clickAI(sentencePage, action);

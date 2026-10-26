@@ -78,7 +78,7 @@ const issueNames = {
   meaning: '意思',
   repetition: '重复',
 };
-export function tutorResultHTML(action, data, { keyword } = {}) {
+export function tutorResultHTML(action, data, { keyword, scenarioAware = false } = {}) {
   let html = '';
   if (action === A.PARAGRAPH_HINT)
     return (
@@ -88,11 +88,13 @@ export function tutorResultHTML(action, data, { keyword } = {}) {
     );
   if (data.original !== undefined) html += section('你的原句', paragraph(data.original));
   if (action === A.SENTENCE_HINT) {
-    html += section('💡 想一想', list(data.thinkingQuestions));
+    html += section(scenarioAware ? '💡 你可以这样写' : '💡 想一想', list(data.thinkingQuestions));
     if (data.usefulPatterns.length) html += section('可以试试的句式', list(data.usefulPatterns));
+    if (data.examples?.length) html += section('✏️ 参考句子', exampleList(data.examples));
   } else if (action === A.SENTENCE_CHECK) {
+    if (scenarioAware) html += section('🔍 句子检查', data.strengths?.length ? section('✅ 写得好的地方', list(data.strengths)) : '');
     html += section(
-      data.status === 'correct' ? '✅ 句子没有发现明显错误' : '🔍 需要检查的地方',
+      data.status === 'correct' ? '✅ 句子没有发现明显错误' : (scenarioAware ? '🔧 可以改进的地方 · 🔍 需要检查的地方' : '🔍 需要检查的地方'),
       data.issues
         .map((item) =>
           article(
@@ -104,27 +106,27 @@ export function tutorResultHTML(action, data, { keyword } = {}) {
     );
     if (data.styleSuggestions.length)
       html += section(
-        '💡 可选的表达建议（原句不一定有错）',
+        scenarioAware ? '🔧 可以改进的地方 · 💡 可选的表达建议（原句不一定有错）' : '💡 可选的表达建议（原句不一定有错）',
         data.styleSuggestions
           .map((item) => article('可以试一试', paragraph(item.text) + why(item.explanation)))
           .join(''),
       );
     if (data.suggestedRevision)
-      html += section('✨ 修改示范（请自己决定）', paragraph(data.suggestedRevision));
+      html += section(scenarioAware ? '✏️ 修改建议' : '✨ 修改示范（请自己决定）', paragraph(data.suggestedRevision));
   } else if (action === A.SENTENCE_EXPAND) {
     html += section(
-      '🌱 一步一步扩写',
+      scenarioAware ? '🌱 扩写后的句子' : '🌱 一步一步扩写',
       data.levels
-        .map((item) => article('第 ' + item.level + ' 步：' + item.focus, paragraph(item.example)))
+        .map((item) => article('第 ' + item.level + ' 步' + (scenarioAware ? '' : '：' + item.focus), paragraph(item.example) + (scenarioAware ? paragraph('💡 我加入了什么？' + item.focus) : '')))
         .join(''),
     );
   } else if (action === A.SENTENCE_VIVID) {
     html += section(
-      '💡 可以试试的描写',
+      scenarioAware ? '🌟 生动在哪里？' : '💡 可以试试的描写',
       data.techniques.map((item) => article(item.type, paragraph(item.suggestion))).join(''),
     );
     html +=
-      section('✨ 示范', paragraph(data.example)) +
+      section(scenarioAware ? '✨ 更生动的句子' : '✨ 示范', paragraph(data.example)) +
       section('试着自己填一填', paragraph(data.tryYourself));
   } else if ([A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].includes(action)) {
     html += section(
@@ -139,7 +141,7 @@ export function tutorResultHTML(action, data, { keyword } = {}) {
     );
   } else if (action === A.VOCABULARY_HELP) {
     html += section(
-      '📚 好词推荐',
+      scenarioAware ? '📚 适合这个情景的好词' : '📚 好词推荐',
       data.recommendations
         .map((item) => {
           const word = item.vocabulary;
@@ -162,6 +164,7 @@ export function tutorResultHTML(action, data, { keyword } = {}) {
         })
         .join('') || paragraph('这次没有合适的推荐，可以打开词语库自己找一找。'),
     );
+    if (data.examples?.length) html += section('✏️ 参考句子', exampleList(data.examples));
   } else if (action === A.ESSAY_NEXT_STEP) {
     html += section('你已经写到这里', paragraph(data.currentProgress));
     html += section(
@@ -194,7 +197,7 @@ export function tutorResultHTML(action, data, { keyword } = {}) {
   return html + section('🎯 轮到你了', paragraph(data.studentTask));
 }
 
-export function attachAITeacher(root, { signal, getRequest }) {
+export function attachAITeacher(root, { signal, getRequest, getContextKey }) {
   let active,
     version = 0,
     cooldownUntil = 0,
@@ -219,11 +222,12 @@ export function attachAITeacher(root, { signal, getRequest }) {
   };
   function open(action, opener) {
     active?.dispose();
-    const session = { version: ++version, action, pending: false };
+    const session = { version: ++version, action, pending: false, contextKey: getContextKey?.() };
     active = session;
     const controller = new AbortController();
     let closed = false;
-    const current = () => !closed && active === session && !signal?.aborted;
+    const current = () => !closed && active === session && !signal?.aborted &&
+      (!getContextKey || session.contextKey === getContextKey());
     const cleanup = () => {
       if (closed) return;
       closed = true;
@@ -237,6 +241,7 @@ export function attachAITeacher(root, { signal, getRequest }) {
     const keyword = request.activity === TUTOR_ACTIVITY.SENTENCE && request.context.topic;
     const targetNotice = keyword
       ? '<div class="sentence-target"><strong>本次造句词语：</strong><mark>' + e(keyword) + '</mark></div>' +
+        (request.context.keywordMode ? '<p class="small muted">我的情境：' + e(request.context.situation || '请先填写情境') + '</p>' : '') +
         (request.context.studentSentence?.trim() && !request.context.studentSentence.includes(keyword)
           ? '<p role="status">' + e(keywordReminder(keyword)) + '</p>' : '')
       : '';
@@ -291,6 +296,7 @@ export function attachAITeacher(root, { signal, getRequest }) {
         if (!current()) return;
         content.innerHTML = tutorResultHTML(action, data, {
           keyword: request.activity === TUTOR_ACTIVITY.SENTENCE ? request.context.topic : undefined,
+          scenarioAware: !!request.context.keywordMode && request.activity === TUTOR_ACTIVITY.SENTENCE,
         });
         const copy = content.querySelector('[data-ai-copy]');
         if (copy)
@@ -353,6 +359,21 @@ export function attachAITeacher(root, { signal, getRequest }) {
     },
     { signal },
   );
+  if (getContextKey) {
+    const invalidate = (event) => {
+      if (!active || active.contextKey === getContextKey()) return;
+      active.dispose();
+      const modal = document.querySelector('#modal');
+      if (modal?.open && modal.classList.contains('ai-dialog')) {
+        // Keep the student's editing/composition focus when closing stale help.
+        if (event.target instanceof HTMLElement && event.target.matches('input, textarea, select'))
+          modal.__returnFocus = event.target;
+        closeModal();
+      }
+    };
+    for (const type of ['input', 'change', 'sentence-teacher-context-change'])
+      root.addEventListener(type, invalidate, { signal });
+  }
   signal?.addEventListener(
     'abort',
     () => {

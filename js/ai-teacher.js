@@ -1,5 +1,6 @@
 // Same-origin, reusable AI service. It never imports a server module or an API key.
-import { validSentenceKeywordResult } from './sentence-keyword.js';
+import { validSentenceKeywordResult, sentenceModelTexts } from './sentence-keyword.js';
+import { usesScenarioTeaching, sentenceScenarioIssue } from './sentence-teacher-context.js';
 import {
   TUTOR_ACTION as A,
   tutorActions,
@@ -17,7 +18,7 @@ export class AIError extends Error {
 // Leave five seconds for the server's controlled response after its 35-second upstream cutoff.
 export const BROWSER_TIMEOUT_MS = 40000;
 export const CACHE_TTL_MS = 5 * 60 * 1000;
-const CACHE_NAMESPACE = 'tutor-response-v3';
+const CACHE_NAMESPACE = 'tutor-response-v4-scenario';
 const teachingCache = new Map();
 const unavailable = '暂时无法联系 AI老师，请稍后再试。';
 const errors = {
@@ -28,18 +29,25 @@ const errors = {
   AI_REFUSAL: 'AI老师这次无法分析这段内容，你可以修改后再试。',
   AI_INVALID_RESPONSE: 'AI老师这次的回复不完整，请再试一次。',
   AI_KEYWORD_MISSING: 'AI老师这次的示范没有完整保留指定词语，请再试一次。你的句子和草稿已保留。',
+  SCENARIO_REQUIRED: '请先填写“我想写的情境”，让 AI老师根据你的想法提供帮助。',
+  AI_SCENARIO_MISMATCH: 'AI老师这次的示范与情境不符，请再试一次。你的情境和草稿已保留。',
   TEXT_REQUIRED: '请先写一些内容，AI老师才能给你建议。',
   TEXT_TOO_LONG: '内容太长了，请选择较短的一段再试（最多 6000 字符）。',
 };
 const clone = (value) => structuredClone(value);
 const nonempty = (value) => typeof value === 'string' && value.trim().length > 0;
 // Validate the new response shapes before caching or rendering a successful envelope.
-const validTeachingData = (action, data) => {
+const validTeachingData = (action, data, request) => {
   if (!nonempty(data.studentTask)) return false;
   const strings = (values) => Array.isArray(values) && values.every(nonempty);
   const items = (values, keys) =>
     Array.isArray(values) &&
     values.every((item) => item && keys.every((key) => nonempty(item[key])));
+  if (usesScenarioTeaching(request)) {
+    if ([A.SENTENCE_HINT, A.VOCABULARY_HELP].includes(action) &&
+        (!strings(data.examples) || data.examples.length !== 2 || data.examples[0].trim() === data.examples[1].trim())) return false;
+    if (action === A.SENTENCE_CHECK && (!strings(data.strengths) || !nonempty(data.suggestedRevision))) return false;
+  }
   if (action === A.PARAGRAPH_HINT)
     return (
       strings(data.ideas) &&
@@ -209,10 +217,13 @@ export async function requestTeaching(action, payload, { signal } = {}) {
     }
     if (result.action !== action || !result.data || typeof result.data !== 'object')
       throw new AIError(errors.AI_INVALID_RESPONSE);
-    if (!validTeachingData(action, result.data)) throw new AIError(errors.AI_INVALID_RESPONSE);
+    if (!validTeachingData(action, result.data, request)) throw new AIError(errors.AI_INVALID_RESPONSE);
     if (request.activity === 'sentenceBuilder' &&
         !validSentenceKeywordResult(action, result.data, request.context.topic))
       throw new AIError(errors.AI_KEYWORD_MISSING);
+    if (request.activity === 'sentenceBuilder' && sentenceModelTexts(action, result.data)
+        .some((text) => sentenceScenarioIssue(text, request.context.situation, request.context.topic)))
+      throw new AIError(errors.AI_SCENARIO_MISMATCH);
     signal?.throwIfAborted();
     if (controller.signal.aborted) throw new AIError(errors.AI_TIMEOUT);
     if (result.cacheable !== false)

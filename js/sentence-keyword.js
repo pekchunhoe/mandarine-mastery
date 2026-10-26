@@ -4,19 +4,26 @@ export const MAX_KEYWORD_LENGTH = 80;
 export const keywordReminder = (keyword) =>
   `你的句子还没有用到“${keyword}”，试试看把这个词语加入句子里！`;
 
-export function validKeywordSentences(text, keyword) {
-  if (typeof text !== 'string' || !text.trim() || typeof keyword !== 'string' || !keyword) return false;
+export function modelSentences(text, keyword = '') {
+  if (typeof text !== 'string' || !text.trim()) return [];
   // Protect punctuation that is part of the exact target itself.
   let marker = '\u0000';
   while (text.includes(marker)) marker += '\u0000';
-  const sentences = text.split(keyword).join(marker).split(/[。！？!?\r\n]+|(?<!\d)\.(?!\d)/u)
-    .map((part) => part.replace(/[\p{P}\p{Z}\s]/gu, '')).filter(Boolean);
-  return sentences.length > 0 && sentences.every((part) => part.includes(marker));
+  const protectedText = keyword ? text.split(keyword).join(marker) : text;
+  return protectedText.split(/[。！？!?\r\n]+|(?<!\d)\.(?!\d)/u)
+    .filter((part) => part.replace(/[\p{P}\p{Z}\s]/gu, ''))
+    .map((part) => part.split(marker).join(keyword));
 }
 
-export function validSentenceKeywordResult(action, data, keyword) {
-  if (!keyword) return true; // Older clients without a target retain their contract.
+export function validKeywordSentences(text, keyword) {
+  if (typeof keyword !== 'string' || !keyword) return false;
+  const sentences = modelSentences(text, keyword);
+  return sentences.length > 0 && sentences.every((part) => part.includes(keyword));
+}
+
+export function sentenceModelTexts(action, data) {
   const examples = [];
+  examples.push(...(data.examples || []));
   if (action === 'sentence_hint') examples.push(...(data.usefulPatterns || []));
   if (action === 'sentence_check' && data.suggestedRevision) examples.push(data.suggestedRevision);
   if (action === 'sentence_expand') examples.push(...(data.levels || []).map((item) => item.example));
@@ -43,5 +50,10 @@ export function validSentenceKeywordResult(action, data, keyword) {
       Object.entries(value).forEach(([name, child]) => visit(child, name));
   };
   visit(data);
-  return examples.every((text) => validKeywordSentences(text, keyword));
+  return examples;
+}
+
+export function validSentenceKeywordResult(action, data, keyword) {
+  if (!keyword) return true; // Older clients without a target retain their contract.
+  return sentenceModelTexts(action, data).every((text) => validKeywordSentences(text, keyword));
 }

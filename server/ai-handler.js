@@ -2,7 +2,6 @@ import { readFile } from 'node:fs/promises';
 import { createVocabularyService } from '../js/vocabulary-service.js';
 import { TUTOR_ACTION as A, localTutorResult } from '../js/tutor-actions.js';
 import {
-  actions,
   MAX_BODY,
   MAX_OUTPUT,
   TeacherError,
@@ -11,6 +10,8 @@ import {
   normalizeResult,
   validateTeachingResult,
   validateSentenceKeywordResult,
+  validateSentenceScenarioResult,
+  teachingSpec,
 } from './ai-contract.js';
 import { TIMEOUT_MS, generateTeachingResult, selectGeminiModel } from './gemini.js';
 import { clientRateLimit, createTutorLimiter } from './ai-rate-limit.js';
@@ -183,19 +184,26 @@ export function createTeacherHandler({
             const parsed = JSON.parse(raw);
             if (input.action === A.VOCABULARY_HELP) {
               // Check raw AI examples before vocabulary filtering can drop them.
-              if (input.activity === 'sentenceBuilder' && input.context.topic)
-                validateSentenceKeywordResult(input, normalizeResult({ supplementalVocabulary: [], ...parsed }, actions[input.action].schema));
-              ({ data, cacheable } = resolveVocabularyResult(parsed, records, store));
+              if (input.activity === 'sentenceBuilder' && input.context.topic) {
+                const checked = normalizeResult({ supplementalVocabulary: [], ...parsed }, teachingSpec(input).schema);
+                validateSentenceKeywordResult(input, checked);
+                validateSentenceScenarioResult(input, checked);
+              }
+              const { examples, ...vocabularyOutput } = parsed;
+              ({ data, cacheable } = resolveVocabularyResult(
+                input.activity === 'sentenceBuilder' ? vocabularyOutput : parsed, records, store));
+              if (input.activity === 'sentenceBuilder' && examples !== undefined) data.examples = examples;
             } else
               data = validateTeachingResult(
                 input.action,
-                normalizeResult(parsed, actions[input.action].schema),
+                normalizeResult(parsed, teachingSpec(input).schema),
                 input.context,
               );
             validateSentenceKeywordResult(input, data);
+            validateSentenceScenarioResult(input, data);
             break;
           } catch (error) {
-            if (error instanceof TeacherError && error.code === 'AI_KEYWORD_MISSING' && attempt === 0) continue;
+            if (error instanceof TeacherError && ['AI_KEYWORD_MISSING', 'AI_SCENARIO_MISMATCH'].includes(error.code) && attempt === 0) continue;
             if (error instanceof TeacherError) throw error;
             throw new TeacherError('AI_INVALID_RESPONSE', 502);
           }
@@ -246,6 +254,8 @@ export function createTeacherHandler({
               AI_RATE_LIMIT: 'rate_limited',
               AI_REFUSAL: 'safety',
               AI_INVALID_RESPONSE: 'malformed_response',
+              AI_KEYWORD_MISSING: 'malformed_response',
+              AI_SCENARIO_MISMATCH: 'malformed_response',
               AI_CANCELLED: 'cancelled',
             }[code] ||
             'unavailable';

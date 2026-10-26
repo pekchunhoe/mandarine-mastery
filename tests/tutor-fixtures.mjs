@@ -80,6 +80,8 @@ export function resultFor(action, context = {}, vocabulary = word, resolved = fa
     '因为……所以……': '老师请我用“因为……所以……”说明事情的原因和结果。',
   };
   const model = models[target] || `老师请我用“${target}”写一个句子。`;
+  const scenarioAware = ['builtin', 'custom'].includes(context.keywordMode);
+  const examples = [model, `____的时候，${model}`];
   const studentTask = '选择一个建议，用自己的想法修改，再读一读。';
   const results = {
     [A.PARAGRAPH_HINT]: {
@@ -90,6 +92,7 @@ export function resultFor(action, context = {}, vocabulary = word, resolved = fa
     [A.SENTENCE_HINT]: {
       thinkingQuestions: ['小明参加什么比赛？', '大家怎样为他加油？'],
       usefulPatterns: [`____${target}____。`],
+      ...(scenarioAware ? { examples } : {}),
       studentTask,
     },
     [A.SENTENCE_CHECK]: {
@@ -99,7 +102,8 @@ export function resultFor(action, context = {}, vocabulary = word, resolved = fa
       styleSuggestions: [
         { text: '可以加入一个动作细节。', explanation: '原句通顺，这只是可选的描写方法。' },
       ],
-      suggestedRevision: '',
+      suggestedRevision: scenarioAware ? model : '',
+      ...(scenarioAware ? { strengths: ['原句表达了自己的想法。'] } : {}),
       studentTask,
     },
     [A.SENTENCE_EXPAND]: {
@@ -130,6 +134,7 @@ export function resultFor(action, context = {}, vocabulary = word, resolved = fa
       ]),
     ),
     [A.VOCABULARY_HELP]: {
+      ...(scenarioAware ? { examples } : {}),
       ...(!resolved ? { supplementalVocabulary: [] } : {}),
       recommendations: [
         {
