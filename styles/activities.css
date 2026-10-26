@@ -792,3 +792,25 @@ summary {
 #sentence-workspace { min-width: 0; overflow-wrap: anywhere; }
 #sentence-workspace .target-word { display: none; }
 #custom-keyword-error { color: #9b2424; }
+.sentence-ai-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 2px;
+  min-width: 0;
+  align-items: stretch;
+}
+.ai-actions .sentence-copy-prompt {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+}
+.ai-actions .sentence-copy-prompt:hover,
+.ai-actions .sentence-copy-prompt:focus-visible { background: var(--paper); border-color: var(--line); }
+.ai-actions .sentence-ai-action > [data-ai-action] { padding-inline: 3px; font-size: .85rem; }
+.sentence-ai-model { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; margin: 8px 0; }
+.sentence-ai-model p { flex: 1 1 200px; min-width: 0; margin: 0; }
+.sentence-example-copy { min-height: 44px; flex: none; }

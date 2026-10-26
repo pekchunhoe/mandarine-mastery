@@ -30,11 +30,16 @@ export const aiToolbar = (
     .filter((action) => activityTutorActions[activity]?.includes(action))
     .map(
       (action) =>
+        (activity === TUTOR_ACTIVITY.SENTENCE ? '<span class="sentence-ai-action" role="group" aria-label="' + e(tutorActions[action].label) + '">' : '') +
         '<button type="button" class="btn" data-ai-action="' +
         action +
         '" aria-haspopup="dialog">' +
         tutorActions[action].label +
-        '</button>',
+        '</button>' +
+        (activity === TUTOR_ACTIVITY.SENTENCE
+          ? '<button type="button" class="btn sentence-copy-prompt" data-sentence-copy-prompt="' + action +
+            '" title="复制提示词" aria-label="复制「' + e(tutorActions[action].label.replace(/^[^\p{Script=Han}]+/u, '')) +
+            '」提示词"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true" focusable="false"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h3"/></svg></button></span>' : ''),
     )
     .join('') +
   extraActions +
@@ -44,16 +49,16 @@ export const aiToolbar = (
     : '点击后会提交相关写作内容取得建议。请勿填写个人资料；由你来决定怎样修改。') +
   '</p></section>';
 const list = (items) => '<ul>' + items.map((item) => '<li>' + e(item) + '</li>').join('') + '</ul>';
-const exampleList = (examples) =>
+const exampleList = (examples, sentence = false) =>
   '<ul class="ai-example-list">' +
   examples
     .map(
       (example, index) =>
         '<li class="ai-example"><span class="ai-example-text">' +
         e(example) +
-        '</span><button type="button" class="btn ai-example-copy" data-ai-example-copy="' +
+        '</span><button type="button" class="btn ai-example-copy' + (sentence ? ' sentence-example-copy' : '') + '" data-ai-example-copy="' +
         index +
-        '">复制示例</button></li>',
+        '" aria-label="复制第' + (index + 1) + '句参考句子">' + (sentence ? '📋 复制句子' : '复制示例') + '</button></li>',
     )
     .join('') +
   '</ul>';
@@ -64,6 +69,34 @@ const why = (text) =>
   paragraph(text) +
   '</details>';
 const article = (title, html) => '<article><h4>' + e(title) + '</h4>' + html + '</article>';
+const completeScaffold = (text) => typeof text === 'string' && /[。！？!?][”’」』"')）]*\s*$/u.test(text) && !/_{2,}|…|\.{3,}|□|＿/u.test(text);
+// Explicit validated model fields only. Never split Chinese sentence punctuation
+// or include the student's original, headings, scaffolds or explanation fields.
+export function sentenceCopyValues(action, data) {
+  const values = new Map();
+  const add = (key, text) => { if (typeof text === 'string' && text.trim()) values.set(key, text); };
+  (data.examples || []).forEach((text, index) => add(`example:${index}`, text));
+  if (action === A.SENTENCE_HINT) (data.usefulPatterns || []).forEach((text, index) => {
+    if (completeScaffold(text)) add(`pattern:${index}`, text);
+  });
+  if (action === A.SENTENCE_CHECK) add('revision', data.suggestedRevision);
+  if (action === A.SENTENCE_EXPAND) data.levels.forEach((item, index) => add(`level:${index}`, item.example));
+  if (action === A.SENTENCE_VIVID) {
+    add('vivid', data.example);
+    if (completeScaffold(data.tryYourself)) add('try-yourself', data.tryYourself);
+  }
+  if (action === A.VOCABULARY_HELP) data.recommendations.forEach((item, index) => {
+    add(`vocabulary:${index}`, item.exampleUsage);
+    if (item.source === 'ai' && item.vocabulary.exampleSentence !== item.exampleUsage)
+      add(`vocabulary-reference:${index}`, item.vocabulary.exampleSentence);
+  });
+  return values;
+}
+const modelParagraph = (text, key, enabled, label = '') => enabled
+  ? '<div class="sentence-ai-model"><p class="ai-example-text">' + e(label) + e(text) +
+    '</p><button type="button" class="btn ai-example-copy sentence-example-copy" data-ai-sentence-copy="' + key +
+    '" aria-label="复制这句参考句子">📋 复制句子</button></div>'
+  : paragraph(label + text);
 const categoryNames = {
   topicRelevance: '切题',
   structure: '结构',
@@ -89,8 +122,9 @@ export function tutorResultHTML(action, data, { keyword, scenarioAware = false }
   if (data.original !== undefined) html += section('你的原句', paragraph(data.original));
   if (action === A.SENTENCE_HINT) {
     html += section(scenarioAware ? '💡 你可以这样写' : '💡 想一想', list(data.thinkingQuestions));
-    if (data.usefulPatterns.length) html += section('可以试试的句式', list(data.usefulPatterns));
-    if (data.examples?.length) html += section('✏️ 参考句子', exampleList(data.examples));
+    if (data.usefulPatterns.length) html += section('可以试试的句式', '<ul>' + data.usefulPatterns.map((text, index) =>
+      '<li>' + (keyword && completeScaffold(text) ? modelParagraph(text, `pattern:${index}`, true) : e(text)) + '</li>').join('') + '</ul>');
+    if (data.examples?.length) html += section('✏️ 参考句子', exampleList(data.examples, !!keyword));
   } else if (action === A.SENTENCE_CHECK) {
     if (scenarioAware) html += section('🔍 句子检查', data.strengths?.length ? section('✅ 写得好的地方', list(data.strengths)) : '');
     html += section(
@@ -112,12 +146,12 @@ export function tutorResultHTML(action, data, { keyword, scenarioAware = false }
           .join(''),
       );
     if (data.suggestedRevision)
-      html += section(scenarioAware ? '✏️ 修改建议' : '✨ 修改示范（请自己决定）', paragraph(data.suggestedRevision));
+      html += section(scenarioAware ? '✏️ 修改建议' : '✨ 修改示范（请自己决定）', modelParagraph(data.suggestedRevision, 'revision', !!keyword));
   } else if (action === A.SENTENCE_EXPAND) {
     html += section(
       scenarioAware ? '🌱 扩写后的句子' : '🌱 一步一步扩写',
       data.levels
-        .map((item) => article('第 ' + item.level + ' 步' + (scenarioAware ? '' : '：' + item.focus), paragraph(item.example) + (scenarioAware ? paragraph('💡 我加入了什么？' + item.focus) : '')))
+        .map((item, index) => article('第 ' + item.level + ' 步' + (scenarioAware ? '' : '：' + item.focus), modelParagraph(item.example, `level:${index}`, !!keyword) + (scenarioAware ? paragraph('💡 我加入了什么？' + item.focus) : '')))
         .join(''),
     );
   } else if (action === A.SENTENCE_VIVID) {
@@ -126,8 +160,8 @@ export function tutorResultHTML(action, data, { keyword, scenarioAware = false }
       data.techniques.map((item) => article(item.type, paragraph(item.suggestion))).join(''),
     );
     html +=
-      section(scenarioAware ? '✨ 更生动的句子' : '✨ 示范', paragraph(data.example)) +
-      section('试着自己填一填', paragraph(data.tryYourself));
+      section(scenarioAware ? '✨ 更生动的句子' : '✨ 示范', modelParagraph(data.example, 'vivid', !!keyword)) +
+      section('试着自己填一填', modelParagraph(data.tryYourself, 'try-yourself', !!keyword && completeScaffold(data.tryYourself)));
   } else if ([A.PARAGRAPH_EXPAND, A.PARAGRAPH_VIVID].includes(action)) {
     html += section(
       '💡 改进建议',
@@ -143,7 +177,7 @@ export function tutorResultHTML(action, data, { keyword, scenarioAware = false }
     html += section(
       scenarioAware ? '📚 适合这个情景的好词' : '📚 好词推荐',
       data.recommendations
-        .map((item) => {
+        .map((item, index) => {
           const word = item.vocabulary;
           if (
             !word ||
@@ -156,15 +190,17 @@ export function tutorResultHTML(action, data, { keyword, scenarioAware = false }
             '</h4><span class="small muted">' +
             (item.source === 'ai' ? 'AI推荐' : '词库') +
             '</span>' +
-            vocabularyDetails(word, { example: !keyword || item.source === 'ai' }) +
+            vocabularyDetails(word, { example: !keyword }) +
             paragraph('AI用法提示：' + item.reason) +
-            paragraph('AI例句：' + item.exampleUsage) +
+            modelParagraph(item.exampleUsage, `vocabulary:${index}`, !!keyword, 'AI例句：') +
+            (keyword && item.source === 'ai' && word.exampleSentence !== item.exampleUsage
+              ? modelParagraph(word.exampleSentence, `vocabulary-reference:${index}`, true, '补充例句：') : '') +
             '</article>'
           );
         })
         .join('') || paragraph('这次没有合适的推荐，可以打开词语库自己找一找。'),
     );
-    if (data.examples?.length) html += section('✏️ 参考句子', exampleList(data.examples));
+    if (data.examples?.length) html += section('✏️ 参考句子', exampleList(data.examples, !!keyword));
   } else if (action === A.ESSAY_NEXT_STEP) {
     html += section('你已经写到这里', paragraph(data.currentProgress));
     html += section(
@@ -311,6 +347,7 @@ export function attachAITeacher(root, { signal, getRequest, getContextKey }) {
           };
         content.querySelectorAll('[data-ai-example-copy]').forEach((button) => {
           button.onclick = async () => {
+            if (!current()) return;
             const copied = await copyText(data.examples[Number(button.dataset.aiExampleCopy)]);
             if (current())
               toast(
@@ -320,6 +357,18 @@ export function attachAITeacher(root, { signal, getRequest, getContextKey }) {
               );
           };
         });
+        if (request.activity === TUTOR_ACTIVITY.SENTENCE) {
+          const sentences = sentenceCopyValues(action, data);
+          content.querySelectorAll('[data-ai-sentence-copy]').forEach((button) => {
+            button.onclick = async () => {
+              if (!current()) return;
+              const text = sentences.get(button.dataset.aiSentenceCopy);
+              if (!text) return;
+              const copied = await copyText(text);
+              if (current()) toast(copied ? '✓ 已复制' : '未能复制，请长按句子选择文字复制');
+            };
+          });
+        }
         refreshSpeech(modal);
       } catch (error) {
         if (!current()) return;

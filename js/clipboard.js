@@ -23,10 +23,14 @@ export async function copyText(
     Object.assign(field.style, {
       position: 'fixed', top: '0', left: '0', opacity: '0', pointerEvents: 'none',
     });
-    documentRef.body.appendChild(field);
+    // An open native dialog makes the rest of the page inert. Keep fallback
+    // selection inside that dialog so copying cannot select unrelated text.
+    const container = documentRef.activeElement?.closest?.('dialog[open]') ||
+      documentRef.querySelector?.('dialog[open]') || documentRef.body;
+    container.appendChild(field);
     field.focus({ preventScroll: true });
     field.select();
-    return documentRef.execCommand('copy');
+    return documentRef.execCommand('copy') === true;
   } catch {
     return false;
   } finally {

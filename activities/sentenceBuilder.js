@@ -10,6 +10,7 @@ import { TUTOR_ACTION as A, TUTOR_ACTIVITY } from '../js/tutor-actions.js';
 import { sentenceVocabularyCandidates } from '../js/ai-vocabulary.js';
 import { MAX_KEYWORD_LENGTH, keywordReminder } from '../js/sentence-keyword.js';
 import { buildSentenceTeacherContext } from '../js/sentence-teacher-context.js';
+import { buildSentenceExternalAiPrompt } from '../js/sentence-external-prompts.js';
 
 const scenarioOptions = () => SENTENCE_SCENARIO_GROUPS.map(({ label, options }) => `<optgroup label="${e(label)}">${options.map((text) => `<option>${e(text)}</option>`).join('')}</optgroup>`).join('') + `<option>${e(CUSTOM_SENTENCE_SCENARIO)}</option>`;
 const scenarioFields = () => `<label for="sentence-context">我想写的情境</label><select id="sentence-context" class="sentence-scenario-select">${scenarioOptions()}</select>`;
@@ -43,6 +44,20 @@ function connectSentenceTeacher(root, ctx, draftKey, getSentence) {
     studentSentence: getSentence(),
     studentYearLevel: state.settings.grade === 'mixed' ? ctx.studentYearLevel || ctx.item.grade : state.settings.grade,
   });
+  root.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('[data-sentence-copy-prompt]') && document.activeElement?.matches('input, textarea'))
+      event.preventDefault(); // Keep an editor's Chinese composition/focus intact.
+  }, { signal: ctx.signal });
+  root.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-sentence-copy-prompt]');
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const prompt = buildSentenceExternalAiPrompt(button.dataset.sentenceCopyPrompt, getContext());
+    const copied = await copyText(prompt);
+    if (!ctx.signal.aborted)
+      toast(copied ? '✓ 提示词已复制' : '未能复制提示词，请检查剪贴板权限后重试。');
+  }, { signal: ctx.signal });
   attachAITeacher(root, { signal: ctx.signal, getContextKey: () => JSON.stringify(getContext()), getRequest(action) {
     const context = getContext();
     return { activity: TUTOR_ACTIVITY.SENTENCE, context: {
